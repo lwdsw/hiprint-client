@@ -99,16 +99,15 @@ const ioServer = (global.SOCKET_SERVER = new require("socket.io")(server, {
   allowEIO3: true, // 兼容 Socket.IO 2.x
   // 跨域问题(Socket.IO 3.x 使用这种方式)
   cors: {
-    // origin: "*",
     // 兼容 Socket.IO 2.x
     origin: (requestOrigin, callback) => {
-      // 允许所有域名连接
-      callback(null, requestOrigin);
+      // file:// 页面发起请求时 origin 会是 null，需要显式回传 "null"。
+      callback(null, requestOrigin || "null");
     },
     methods: "GET, POST, PUT, DELETE, OPTIONS",
     allowedHeaders: "*",
     // 详情参数见 https://www.npmjs.com/package/cors
-    credentials: false,
+    credentials: true,
   },
 }));
 
