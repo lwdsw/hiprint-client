@@ -1,6 +1,6 @@
 {
   "name": "arcoprint",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ArcoPrint silent print client",
   "main": "main.js",
   "author": "ArcoStudio<zerone40@163.com>",
@@ -34,7 +34,13 @@
       "**/*"
     ],
     "extraResources": [
-      "plugin/*"
+      {
+        "from": "plugin",
+        "to": "plugin",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
