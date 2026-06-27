@@ -31,18 +31,6 @@ db.serialize(() => {
       errorMessage TEXT
     )
   `);
-
-  // 添加新的可选字段 rePrintAble，默认值为 1
-  db.run(
-    `
-    ALTER TABLE print_logs ADD COLUMN rePrintAble INTEGER DEFAULT 1;
-  `,
-    (err) => {
-      if (err && !err.message.includes("duplicate column")) {
-        console.error("添加新字段时出错:", err);
-      }
-    },
-  );
 });
 
 module.exports = db;

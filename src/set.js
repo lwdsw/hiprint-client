@@ -110,11 +110,7 @@ function setConfig(event, data) {
     .then((res) => {
       if (res.response === 0) {
         try {
-          let pdfPath = path.join(data.pdfPath, "url_pdf");
-          fs.mkdirSync(pdfPath, { recursive: true });
-          pdfPath = path.join(data.pdfPath, "blob_pdf");
-          fs.mkdirSync(pdfPath, { recursive: true });
-          pdfPath = path.join(data.pdfPath, "hiprint");
+          const pdfPath = path.join(data.pdfPath, "blob_pdf");
           fs.mkdirSync(pdfPath, { recursive: true });
         } catch {
           dialog.showMessageBox(SET_WINDOW, {

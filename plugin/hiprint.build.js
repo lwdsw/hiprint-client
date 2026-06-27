@@ -12808,6 +12808,21 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     notifyClientPrintNotConnected(templateId);
     return false;
   }
+  function notifyBlobPdfOnly(templateId, methodName) {
+    const message = "ArcoPrint 客户端仅支持 blob_pdf 打印方式";
+    hinnn.event.trigger(`printError_${templateId}`, {
+      templateId,
+      message,
+      methodName
+    });
+    emitRuntimeMessage({
+      type: "warning",
+      code: "CLIENT_PRINT_BLOB_PDF_ONLY",
+      message,
+      templateId,
+      methodName
+    });
+  }
   function toPdfBase64(pdfValue) {
     if (typeof pdfValue !== "string") return void 0;
     return pdfValue.indexOf(",") > -1 ? pdfValue.split(",")[1] : pdfValue;
@@ -13306,11 +13321,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
      * 中文说明：处理打印相关逻辑，把模板、数据或页面内容交给打印模板的打印流程。
      */
     print2(data, options2) {
-      data || (data = {});
-      options2 || (options2 = {});
-      if (ensureClientPrintOpened(this.id)) {
-        this.collectPrintStyles((cssText) => this.sentToClient(cssText, data, options2));
-      }
+      return this.printPdf2(data, options2);
     }
     /**
      * 中文说明：把打印模板中的图片地址转换为 base64，便于预览、导出和客户端打印内联资源。
@@ -13346,13 +13357,8 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     /**
      * 中文说明：把渲染后的打印任务发送到本地客户端执行静默或直接打印。
      */
-    sentToClient(styleText, data, options2) {
-      data || (data = {});
-      const sendOptions = createClientPrintPayload(this.id, "html", options2);
-      sendOptions.imgToBase64 = true;
-      const html = styleText + this.getHtml(data, sendOptions)[0].outerHTML;
-      sendOptions.html = html;
-      hiwebSocket.send(sendOptions);
+    sentToClient(_styleText, _data, _options2) {
+      notifyBlobPdfOnly(this.id, "sentToClient");
     }
     /**
      * 中文说明：处理打印相关逻辑，把模板、数据或页面内容交给打印模板的打印流程。
@@ -13363,70 +13369,26 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     /**
      * 中文说明：处理打印相关逻辑，把模板、数据或页面内容交给打印模板的打印流程。
      */
-    printByHtml2(html, options2) {
-      options2 || (options2 = {});
-      if (ensureClientPrintOpened(this.id)) {
-        this.collectPrintStyles((cssText) => {
-          const fullHtml = cssText + $(html)[0].outerHTML;
-          const sendOptions = createClientPrintPayload(this.id, "html", options2);
-          sendOptions.html = fullHtml;
-          hiwebSocket.send(sendOptions);
-        });
-      }
+    printByHtml2(_html, _options2) {
+      notifyBlobPdfOnly(this.id, "printByHtml2");
     }
     /**
      * 中文说明：发送 PDF URL 或本地 PDF 文件路径给本地客户端打印。
      */
-    printUrlPdf2(pdfPath, options2) {
-      options2 || (options2 = {});
-      if (!ensureClientPrintOpened(this.id)) return;
-      if (!pdfPath) {
-        hinnn.event.trigger(`printError_${this.id}`, {
-          templateId: this.id,
-          message: "PDF 路径不能为空"
-        });
-        return;
-      }
-      const sendOptions = createClientPrintPayload(this.id, "url_pdf", options2);
-      sendOptions.pdf_path = pdfPath;
-      hiwebSocket.send(sendOptions);
+    printUrlPdf2(_pdfPath, _options2) {
+      notifyBlobPdfOnly(this.id, "printUrlPdf2");
     }
     /**
      * 中文说明：按客户端 printByFragments 协议分片发送 HTML，适合大体积 HTML 打印。
      */
-    printByFragments(html, options2) {
-      options2 || (options2 = {});
-      if (!ensureClientPrintOpened(this.id)) return;
-      this.collectPrintStyles((cssText) => {
-        const fullHtml = cssText + $(html)[0].outerHTML;
-        const fragmentSize = Math.max(1, Number(options2.fragmentSize) || 6e4);
-        const total = Math.max(1, Math.ceil(fullHtml.length / fragmentSize));
-        const fragmentId = options2.id || HiPrintlib.instance.guid();
-        for (let index = 0; index < total; index += 1) {
-          const payload = $.extend({}, options2, {
-            id: fragmentId,
-            templateId: options2.templateId || this.id,
-            total,
-            index,
-            htmlFragment: fullHtml.slice(index * fragmentSize, (index + 1) * fragmentSize)
-          });
-          hiwebSocket.send(payload, "printByFragments");
-        }
-      });
+    printByFragments(_html, _options2) {
+      notifyBlobPdfOnly(this.id, "printByFragments");
     }
     /**
      * 中文说明：发送模板 JSON 和打印数据给客户端，由客户端渲染后打印。
      */
-    renderPrint(data, options2) {
-      data || (data = {});
-      options2 || (options2 = {});
-      if (!ensureClientPrintOpened(this.id)) return;
-      const payload = $.extend({}, options2, {
-        templateId: options2.templateId || this.id,
-        template: this.getJson(),
-        data
-      });
-      hiwebSocket.send(payload, "render-print");
+    renderPrint(_data, _options2) {
+      notifyBlobPdfOnly(this.id, "renderPrint");
     }
     /**
      * 中文说明：删除print element，同步调整打印模板的结构和选择状态。
@@ -13520,15 +13482,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
      * 中文说明：发送 HTML 给本地客户端，由客户端转换为 PDF 后再打印。
      */
     printClientPdf(data, options2) {
-      data || (data = {});
-      options2 || (options2 = {});
-      if (!ensureClientPrintOpened(this.id)) return;
-      this.collectPrintStyles((styleText) => {
-        const sendOptions = createClientPrintPayload(this.id, "pdf", options2);
-        sendOptions.imgToBase64 = true;
-        sendOptions.html = styleText + this.getHtml(data, sendOptions)[0].outerHTML;
-        hiwebSocket.send(sendOptions);
-      });
+      return this.printPdf2(data, options2);
     }
     /**
      * 中文说明：发送 PDF 二进制、base64 或 data URI 给本地客户端，由客户端保存临时 PDF 后打印。
@@ -13802,11 +13756,10 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     this.getHtml(data).hiwprint();
   }
   function print2(data, success, error) {
-    $.extend({}, data || {}).imgToBase64 = true;
     const template = new PrintTemplate({});
     template.on("printSuccess", success);
     template.on("printError", error);
-    template.printByHtml2(this.getHtml(data), data.options);
+    template.printPdf2(data, data && data.options);
   }
   function getHtml(options2) {
     let html;

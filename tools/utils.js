@@ -74,7 +74,7 @@ function patchWin32PdfPrinterBinPath() {
 
 patchWin32PdfPrinterBinPath();
 
-const { getPaperSizeInfo, getPaperSizeInfoAll } = require("win32-pdf-printer");
+const { getPaperSizeInfoAll } = require("win32-pdf-printer");
 const db = require("./database");
 let buildInfo = {};
 const buildInfoPath = path.join(__dirname, "../build-info.json");
@@ -84,61 +84,69 @@ if (fs.existsSync(buildInfoPath)) {
 
 Store.initRenderer();
 
-const normalizeDirectPrintPayload = (data) => {
-  const type = `${data?.type || ""}`.toLowerCase();
-  if (type === "blob_pdf") {
-    return {
-      ...data,
-      type: "blob_pdf",
-      pdf_blob:
-        data.pdf_blob ||
-        data.pdfBlob ||
-        data.pdf_base64 ||
-        data.pdfBase64 ||
-        data.pdfDataUri,
-    };
+const normalizeDirectPrintPayload = (data) => ({
+  ...data,
+  type: "blob_pdf",
+  pdf_blob:
+    data.pdf_blob ||
+    data.pdfBlob ||
+    data.pdf_base64 ||
+    data.pdfBase64 ||
+    data.pdfDataUri,
+});
+
+const isBlobPdfPrintPayload = (data) =>
+  `${data?.type || ""}`.toLowerCase() === "blob_pdf";
+
+const getPayloadSocket = (data = {}) =>
+  data.clientType === "local"
+    ? SOCKET_SERVER?.sockets?.sockets?.get(data.socketId)
+    : SOCKET_CLIENT;
+
+const finishPrintTask = (taskId) => {
+  if (taskId && PRINT_RUNNER_DONE[taskId]) {
+    PRINT_RUNNER_DONE[taskId]();
+    delete PRINT_RUNNER_DONE[taskId];
   }
-  if (type === "url_pdf") {
-    return {
-      ...data,
-      type: "url_pdf",
-      pdf_path: data.pdf_path || data.pdfPath || data.url,
-    };
-  }
-  return data;
+  MAIN_WINDOW?.webContents?.send("printTask", PRINT_RUNNER.isBusy());
 };
 
-const isDirectPdfPrintPayload = (data) => {
-  const type = `${data?.type || ""}`.toLowerCase();
-  return type === "blob_pdf" || type === "url_pdf";
+const rejectUnsupportedPrintPayload = (data = {}, source = "news") => {
+  const message = "客户端仅支持 blob_pdf 打印方式";
+  const socket = getPayloadSocket(data);
+  console.warn("[ArcoPrint][print-route] unsupported print payload", {
+    source,
+    type: data.type,
+    templateId: data.templateId,
+  });
+  socket?.emit("error", {
+    msg: message,
+    templateId: data.templateId,
+    replyId: data.replyId,
+  });
+  finishPrintTask(data.taskId);
 };
 
 const dispatchPrintPayload = (data) => {
   if (
-    isDirectPdfPrintPayload(data) &&
+    isBlobPdfPrintPayload(data) &&
     typeof global.PRINT_DIRECT_HANDLER === "function"
   ) {
     const directData = normalizeDirectPrintPayload(data);
-    console.log("[ArcoPrint][print-route] direct pdf print", {
-      type: directData.type,
+    console.log("[ArcoPrint][print-route] blob_pdf print", {
       templateId: directData.templateId,
       hasPdfBlob: !!directData.pdf_blob,
-      hasPdfPath: !!directData.pdf_path,
     });
     Promise.resolve(global.PRINT_DIRECT_HANDLER(directData)).catch((error) => {
       console.error(
-        "[ArcoPrint][print-route] direct pdf print failed:",
+        "[ArcoPrint][print-route] blob_pdf print failed:",
         error && error.message ? error.message : error,
       );
-      if (directData.taskId && PRINT_RUNNER_DONE[directData.taskId]) {
-        PRINT_RUNNER_DONE[directData.taskId]();
-        delete PRINT_RUNNER_DONE[directData.taskId];
-      }
-      MAIN_WINDOW?.webContents?.send("printTask", PRINT_RUNNER.isBusy());
+      finishPrintTask(directData.taskId);
     });
     return;
   }
-  PRINT_WINDOW.webContents.send("print-new", data);
+  rejectUnsupportedPrintPayload(data);
 };
 
 const schema = {
@@ -204,10 +212,6 @@ const schema = {
     type: "boolean",
     default: false,
   },
-  rePrint: {
-    type: "boolean",
-    default: true,
-  },
 };
 
 const store = new Store({ schema });
@@ -272,13 +276,6 @@ const _address = {
 };
 
 /**
- * @description: 检查分片任务实例，用于自动删除超时分片信息
- */
-const watchTaskInstance = generateWatchTask(
-  () => global.PRINT_FRAGMENTS_MAPPING,
-)();
-
-/**
  * @description: 尝试获取客户端唯一id，依赖管理员权限与注册表读取
  * @return {string}
  */
@@ -315,64 +312,6 @@ function emitClientInfo(socket) {
 }
 
 /**
- * 生成检查分片任务的闭包函数
- * @param {Object} getCheckTarget 获取校验对象，最后会得到global.PRINT_FRAGMENTS_MAPPING
- * @returns {Function}
- */
-function generateWatchTask(getCheckTarget) {
-  // 记录当前检查任务是否开启，避免重复开启任务
-  let isWatching = false;
-  /**
-   * @description: 检查分片任务实例创建函数
-   * @param {Object} config 检查参数，根据实际情况调整
-   * @param {number} [config.checkInterval=5] 执行内存检查的时间间隔，单位分钟
-   * @param {number} [config.expire=10] 分片信息过期时间，单位分钟，不应过小
-   */
-  return function generateWatchTaskInstance(config = {}) {
-    // 合并用户和默认配置
-    const realConfig = Object.assign(
-      {
-        checkInterval: 5, // 默认检查间隔
-        expire: 10, // 默认过期时间
-      },
-      config,
-    );
-    return {
-      startWatch() {
-        if (isWatching) return;
-        this.createWatchTimeout();
-      },
-      createWatchTimeout() {
-        // 更新开关状态
-        isWatching = true;
-        return setTimeout(
-          this.clearFragmentsWhichIsExpired.bind(this),
-          realConfig.checkInterval * 60 * 1000,
-        );
-      },
-      clearFragmentsWhichIsExpired() {
-        const checkTarget = getCheckTarget();
-        const currentTimeStamp = Date.now();
-        Object.entries(checkTarget).map(([id, fragmentInfo]) => {
-          // 获取任务最后更新时间
-          const { updateTime } = fragmentInfo;
-          // 任务过期时，清除任务信息释放内存
-          if (currentTimeStamp - updateTime > realConfig.expire * 60 * 1000) {
-            delete checkTarget[id];
-          }
-        });
-        // 获取剩余任务数量
-        const printTaskCount = Object.keys(checkTarget).length;
-        // 还有打印任务，继续创建检查任务
-        if (printTaskCount) this.createWatchTimeout();
-        // 更新开关状态
-        else isWatching = false;
-      },
-    };
-  };
-}
-
-/**
  * SQLite bound-parameter limit
  */
 const SQLITE_MAX_VARIABLE_NUMBER = 999;
@@ -387,7 +326,7 @@ const SQLITE_MAX_VARIABLE_NUMBER = 999;
  */
 function queryPrintStatus(templateIds, onSuccess, onError) {
   const baseSelect =
-    "SELECT id, timestamp, socketId, clientType, printer, templateId, pageNum, status, rePrintAble, errorMessage FROM print_logs";
+    "SELECT id, timestamp, socketId, clientType, printer, templateId, pageNum, status, errorMessage FROM print_logs";
   const orderBy = " ORDER BY timestamp DESC, id DESC";
 
   // Empty templateIds → return latest 20 records
@@ -636,80 +575,34 @@ function initServeEvent(server) {
     });
 
     /**
-     * @description: client 分批打印任务
+     * @description: client 分批 HTML 打印已移除，仅保留 blob_pdf。
      */
     socket.on("printByFragments", (data) => {
-      if (data) {
-        const { total, index, htmlFragment, id } = data;
-        const currentInfo =
-          PRINT_FRAGMENTS_MAPPING[id] ||
-          (PRINT_FRAGMENTS_MAPPING[id] = {
-            total,
-            fragments: [],
-            count: 0,
-            updateTime: 0,
-          });
-        // 添加片段信息
-        currentInfo.fragments[index] = htmlFragment;
-        // 计数
-        currentInfo.count++;
-        // 记录更新时间
-        currentInfo.updateTime = Date.now();
-        // 全部片段已传输完毕
-        if (currentInfo.count === currentInfo.total) {
-          // 清除全局缓存
-          delete PRINT_FRAGMENTS_MAPPING[id];
-          // 合并全部打印片段信息
-          data.html = currentInfo.fragments.join("");
-          // 添加打印任务
-          PRINT_RUNNER.add((done) => {
-            data.socketId = socket.id;
-            data.taskId = uuidv7();
-            data.clientType = "local";
-            PRINT_RUNNER_DONE[data.taskId] = done;
-            dispatchPrintPayload(data);
-            MAIN_WINDOW.webContents.send("printTask", true);
-          });
-        }
-        // 开始检查任务
-        watchTaskInstance.startWatch();
-      }
+      rejectUnsupportedPrintPayload(
+        { ...(data || {}), socketId: socket.id, clientType: "local" },
+        "printByFragments",
+      );
     });
 
     socket.on("render-print", (data) => {
-      if (data) {
-        RENDER_RUNNER.add((done) => {
-          data.socketId = socket.id;
-          data.taskId = uuidv7();
-          data.clientType = "local";
-          RENDER_WINDOW.webContents.send("print", data);
-          RENDER_RUNNER_DONE[data.taskId] = done;
-        });
-      }
+      rejectUnsupportedPrintPayload(
+        { ...(data || {}), socketId: socket.id, clientType: "local" },
+        "render-print",
+      );
     });
 
     socket.on("render-jpeg", (data) => {
-      if (data) {
-        RENDER_RUNNER.add((done) => {
-          data.socketId = socket.id;
-          data.taskId = uuidv7();
-          data.clientType = "local";
-          RENDER_WINDOW.webContents.send("png", data);
-          RENDER_RUNNER_DONE[data.taskId] = done;
-        });
-      }
+      rejectUnsupportedPrintPayload(
+        { ...(data || {}), socketId: socket.id, clientType: "local" },
+        "render-jpeg",
+      );
     });
 
     socket.on("render-pdf", (data) => {
-      if (data) {
-        RENDER_RUNNER.add((done) => {
-          data.socketId = socket.id;
-          data.taskId = uuidv7();
-          data.clientType = "local";
-          RENDER_WINDOW.webContents.send("pdf", data);
-          RENDER_RUNNER_DONE[data.taskId] = done;
-        });
-      }
+      rejectUnsupportedPrintPayload(
+        { ...(data || {}), socketId: socket.id, clientType: "local" },
+        "render-pdf",
+      );
     });
 
     /**
@@ -887,39 +780,24 @@ function initClientEvent() {
   });
 
   client.on("render-print", (data) => {
-    if (data) {
-      RENDER_RUNNER.add((done) => {
-        data.socketId = client.id;
-        data.taskId = uuidv7();
-        data.clientType = "transit";
-        RENDER_WINDOW.webContents.send("print", data);
-        RENDER_RUNNER_DONE[data.taskId] = done;
-      });
-    }
+    rejectUnsupportedPrintPayload(
+      { ...(data || {}), socketId: client.id, clientType: "transit" },
+      "render-print",
+    );
   });
 
   client.on("render-jpeg", (data) => {
-    if (data) {
-      RENDER_RUNNER.add((done) => {
-        data.socketId = client.id;
-        data.taskId = uuidv7();
-        data.clientType = "transit";
-        RENDER_WINDOW.webContents.send("png", data);
-        RENDER_RUNNER_DONE[data.taskId] = done;
-      });
-    }
+    rejectUnsupportedPrintPayload(
+      { ...(data || {}), socketId: client.id, clientType: "transit" },
+      "render-jpeg",
+    );
   });
 
   client.on("render-pdf", (data) => {
-    if (data) {
-      RENDER_RUNNER.add((done) => {
-        data.socketId = client.id;
-        data.taskId = uuidv7();
-        data.clientType = "transit";
-        RENDER_WINDOW.webContents.send("pdf", data);
-        RENDER_RUNNER_DONE[data.taskId] = done;
-      });
-    }
+    rejectUnsupportedPrintPayload(
+      { ...(data || {}), socketId: client.id, clientType: "transit" },
+      "render-pdf",
+    );
   });
 
   /**

@@ -121,15 +121,6 @@
           :key="column.prop"
           v-bind="column"
         >
-          <template v-if="column.prop === 'action'" #default="{row}">
-            <el-button
-              :disabled="row.rePrintAble === 0 || !rePrintAble"
-              type="text"
-              @click="handleRePrint(row)"
-            >
-              重打
-            </el-button>
-          </template>
         </el-table-column>
       </el-table>
       <div class="pagination">
@@ -149,9 +140,6 @@
 
     <script>
       const { ipcRenderer } = require("electron");
-      const Store = require("electron-store");
-      const store = new Store();
-
       new Vue({
         el: "#app",
         data() {
@@ -315,20 +303,9 @@
                   prop: "errorMessage",
                   label: "错误信息",
                 },
-                {
-                  prop: "action",
-                  label: "操作",
-                  align: "center",
-                  width: "120px",
-                },
               ],
             },
           };
-        },
-        computed: {
-          rePrintAble() {
-            return store.get("rePrint");
-          },
         },
         created() {
           this.fetchLogs();
@@ -410,12 +387,6 @@
               this.logs = [];
               this.tableOptions.total = 0;
             });
-          },
-          /**
-           * 处理重打
-           */
-          handleRePrint(row) {
-            ipcRenderer.send("reprint", row);
           },
         },
       });

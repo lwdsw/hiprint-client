@@ -7,9 +7,8 @@ const { app } = require("electron");
  * @return {undefined}
  */
 exports.appQuit = function() {
-  console.log("==> Electron-hiprint 关闭 <==");
+  console.log("==> ArcoPrint 关闭 <==");
   SET_WINDOW && SET_WINDOW.destroy();
-  PRINT_WINDOW && PRINT_WINDOW.destroy();
   MAIN_WINDOW && MAIN_WINDOW.destroy();
   APP_TRAY && APP_TRAY.destroy();
   app.quit();

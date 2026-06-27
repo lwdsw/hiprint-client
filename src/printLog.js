@@ -96,7 +96,7 @@ function loadingView(windowOptions) {
  * @return {void}
  */
 function fetchPrintLogs(event, { condition, params, page, sort }) {
-  const baseQuery = `SELECT id, timestamp, socketId, clientType, printer, templateId, pageNum, status, rePrintAble, errorMessage FROM print_logs`;
+  const baseQuery = `SELECT id, timestamp, socketId, clientType, printer, templateId, pageNum, status, errorMessage FROM print_logs`;
   const totalQuery = `SELECT COUNT(*) AS total FROM print_logs`;
   let query = baseQuery;
   let total = totalQuery;
@@ -157,31 +157,11 @@ function clearPrintLogs(event) {
 }
 
 /**
- * @description: 重打打印
- * @param {IpcMainEvent}  event 事件
- * @param {Object} data 打印日志
- * @return {void}
- */
-function rePrint(event, data) {
-  db.get("SELECT * FROM print_logs WHERE id = ?", [data.id], (err, row) => {
-    if (err) return;
-    PRINT_WINDOW.webContents.send("reprint", {
-      ...JSON.parse(row.data),
-      taskId: undefined,
-      replyId: undefined,
-      clientType: "local",
-      socketId: undefined,
-    });
-  });
-}
-
-/**
  * @description: 绑定打印日志窗口事件
  * @return {void}
  */
 function initPrintLogEvent() {
   ipcMain.on("request-logs", fetchPrintLogs);
-  ipcMain.on("reprint", rePrint);
   ipcMain.on("clear-logs", clearPrintLogs);
 }
 
@@ -191,7 +171,6 @@ function initPrintLogEvent() {
  */
 function removePrintLogEvent() {
   ipcMain.removeListener("request-logs", fetchPrintLogs);
-  ipcMain.removeListener("reprint", rePrint);
   ipcMain.removeListener("clear-logs", clearPrintLogs);
   PRINT_LOG_WINDOW = null;
 }

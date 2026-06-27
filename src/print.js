@@ -1,49 +1,20 @@
 "use strict";
 
-const { app, BrowserWindow, ipcMain } = require("electron");
-const path = require("path");
-const { printPdf, printPdfBlob } = require("./pdf-print");
+const { ipcMain } = require("electron");
+const { printPdfBlob } = require("./pdf-print");
 const { store, getCurrentPrintStatusByName } = require("../tools/utils");
 const db = require("../tools/database");
 
 /**
- * @description: 创建打印窗口
- * @return {BrowserWindow} PRINT_WINDOW 打印窗口
+ * @description: 初始化打印事件。当前版本仅保留 blob_pdf，不再创建隐藏 HTML 打印窗口。
+ * @return {void}
  */
-async function createPrintWindow() {
-  const windowOptions = {
-    width: 100, // 窗口宽度
-    height: 100, // 窗口高度
-    show: false, // 不显示
-    webPreferences: {
-      contextIsolation: false, // 设置此项为false后，才可在渲染进程中使用electron api
-      nodeIntegration: true,
-    },
-    // 为窗口设置背景色可能优化字体模糊问题
-    // https://www.electronjs.org/zh/docs/latest/faq#文字看起来很模糊这是什么原因造成的怎么解决这个问题呢
-    backgroundColor: "#fff",
-  };
-
-  // 创建打印窗口
-  PRINT_WINDOW = new BrowserWindow(windowOptions);
-
-  // 加载打印渲染进程页面
-  let printHtml = path.join("file://", app.getAppPath(), "/assets/print.html");
-  PRINT_WINDOW.webContents.loadURL(printHtml);
-
-  // 未打包时打开开发者工具
-  // if (!app.isPackaged) {
-  //   PRINT_WINDOW.webContents.openDevTools();
-  // }
-
-  // 绑定窗口事件
+function setupPrintService() {
   initPrintEvent();
-
-  return PRINT_WINDOW;
 }
 
 /**
- * @description: 执行打印任务（主进程直接调用或渲染窗口 IPC 调用）
+ * @description: 执行 blob_pdf 打印任务（Socket 队列或 IPC 调用）
  * @return {Promise<void>}
  */
 async function handlePrintData(data = {}) {
@@ -52,7 +23,7 @@ async function handlePrintData(data = {}) {
       ? SOCKET_SERVER.sockets.sockets.get(data.socketId)
       : SOCKET_CLIENT;
 
-  const printers = await PRINT_WINDOW.webContents.getPrintersAsync();
+  const printers = await MAIN_WINDOW.webContents.getPrintersAsync();
   let defaultPrinter = data.printer || store.get("defaultPrinter", "");
   const ENABLE_STATUS = process.platform === "win32" ? [0, 512, 1024] : [3];
   let printerError = false;
@@ -77,7 +48,7 @@ async function handlePrintData(data = {}) {
 
   const logPrintResult = (status, errorMessage = "") => {
     db.run(
-      `INSERT INTO print_logs (socketId, clientType, printer, templateId, data, pageNum, status, rePrintAble, errorMessage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO print_logs (socketId, clientType, printer, templateId, data, pageNum, status, errorMessage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         socket?.id,
         data.clientType,
@@ -86,7 +57,6 @@ async function handlePrintData(data = {}) {
         JSON.stringify(data),
         data.pageNum,
         status,
-        data.rePrintAble ?? 1,
         errorMessage,
       ],
       (err) => {
@@ -130,90 +100,58 @@ async function handlePrintData(data = {}) {
     return;
   }
 
-  if (data.pdfGenerateError) {
-    fail("HTML_BLOB_PDF", data.pdfGenerateError);
-    return;
-  }
-
   const type = `${data.type || ""}`.toLowerCase();
 
-  if (type === "blob_pdf") {
-    const pdfBlob = data.pdf_blob;
-    delete data.pdf_blob;
-    const printType = data.pdfGeneratedBy === "html" ? "HTML_BLOB_PDF" : "BLOB_PDF";
-
-    if (!pdfBlob) {
-      fail(printType, "blob_pdf类型打印缺少pdf_blob参数");
-      return;
-    }
-
-    try {
-      await printPdfBlob(pdfBlob, deviceName, data);
-      console.log(
-        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-          data.templateId
-        }】 打印成功，打印类型 ${printType}，打印机：${deviceName}，页数：${
-          data.pageNum
-        }`,
-      );
-      logPrintResult("success");
-      emitSuccess();
-    } catch (err) {
-      const message = err && err.message ? err.message : String(err);
-      logPrintResult("failed", message);
-      console.log(
-        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-          data.templateId
-        }】 打印失败，打印类型 ${printType}，打印机：${deviceName}，原因：${message}`,
-      );
-      emitError(message);
-    } finally {
-      donePrintTask();
-    }
+  if (type !== "blob_pdf") {
+    fail("BLOB_PDF", "客户端仅支持 blob_pdf 打印方式");
     return;
   }
 
-  if (type === "url_pdf") {
-    const pdfPath = data.pdf_path;
-    if (!pdfPath) {
-      fail("URL_PDF", "url_pdf类型打印缺少pdf_path参数");
-      return;
-    }
+  const pdfBlob =
+    data.pdf_blob ||
+    data.pdfBlob ||
+    data.pdf_base64 ||
+    data.pdfBase64 ||
+    data.pdfDataUri;
+  delete data.pdf_blob;
+  delete data.pdfBlob;
+  delete data.pdf_base64;
+  delete data.pdfBase64;
+  delete data.pdfDataUri;
 
-    try {
-      await printPdf(pdfPath, deviceName, data);
-      console.log(
-        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-          data.templateId
-        }】 打印成功，打印类型：URL_PDF，打印机：${deviceName}，页数：${
-          data.pageNum
-        }`,
-      );
-      logPrintResult("success");
-      checkPrinterStatus(deviceName, emitSuccess);
-    } catch (err) {
-      const message = err && err.message ? err.message : String(err);
-      console.log(
-        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-          data.templateId
-        }】 打印失败，打印类型：URL_PDF，打印机：${deviceName}，原因：${message}`,
-      );
-      logPrintResult("failed", message);
-      emitError(`打印失败: ${message}`);
-    } finally {
-      donePrintTask();
-    }
+  if (!pdfBlob) {
+    fail("BLOB_PDF", "blob_pdf类型打印缺少pdf_blob参数");
     return;
   }
 
-  fail(
-    "HTML_BLOB_PDF",
-    "客户端已禁用 Chromium PDF 排版，请先在隐藏打印窗口中用 jsPDF 生成 blob_pdf",
-  );
+  try {
+    await printPdfBlob(pdfBlob, deviceName, data);
+    console.log(
+      `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+        data.templateId
+      }】 打印成功，打印类型 BLOB_PDF，打印机：${deviceName}，页数：${
+        data.pageNum
+      }`,
+    );
+    logPrintResult("success");
+    emitSuccess();
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    logPrintResult("failed", message);
+    console.log(
+      `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+        data.templateId
+      }】 打印失败，打印类型 BLOB_PDF，打印机：${deviceName}，原因：${message}`,
+    );
+    emitError(message);
+  } finally {
+    donePrintTask();
+  }
 }
 
+
 /**
- * @description: 绑定打印窗口事件
+ * @description: 绑定打印事件
  * @return {Void}
  */
 function initPrintEvent() {
@@ -223,37 +161,6 @@ function initPrintEvent() {
   });
 }
 
-function checkPrinterStatus(deviceName, callback) {
-  const intervalId = setInterval(() => {
-    PRINT_WINDOW.webContents
-      .getPrintersAsync()
-      .then((printers) => {
-        const printer = printers.find((printer) => printer.name === deviceName);
-        console.log(`current printer: ${JSON.stringify(printer)}`);
-        // todo: 打印机状态对照表，根据打印机状态判断是否支持打印
-        // win32: https://learn.microsoft.com/en-us/windows/win32/printdocs/printer-info-2
-        // cups: https://www.cups.org/doc/cupspm.html#ipp_status_e
-        const ENABLE_STATUS =
-          process.platform === "win32" ? [0, 512, 1024] : [3];
-        if (printer && ENABLE_STATUS.includes(printer.status)) {
-          callback && callback();
-          clearInterval(intervalId); // Stop polling when status is 0
-          console.log(
-            `Printer ${deviceName} is now ready (status: ${printer.status})`,
-          );
-          // You can add any additional logic here for when the printer is ready
-        }
-      })
-      .catch((error) => {
-        clearInterval(intervalId); // Also clear interval on error
-        console.log(`Error checking printer status: ${error}`);
-      });
-  }, 1000); // Check every 1 second (adjust interval as needed)
-
-  return intervalId; // Return the interval ID in case you need to cancel it externally
-}
-
 module.exports = async () => {
-  // 创建打印窗口
-  await createPrintWindow();
+  setupPrintService();
 };

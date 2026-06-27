@@ -1,7 +1,7 @@
 {
   "name": "arcoprint",
-  "version": "1.0.4",
-  "description": "ArcoPrint silent print client",
+  "version": "0.0.1",
+  "description": "ArcoPrint PDF Blob only silent print client",
   "main": "main.js",
   "author": "ArcoStudio<zerone40@163.com>",
   "license": "MIT",
@@ -31,17 +31,10 @@
     },
     "asar": true,
     "files": [
-      "**/*"
+      "**/*",
+      "!plugin/**"
     ],
-    "extraResources": [
-      {
-        "from": "plugin",
-        "to": "plugin",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
+    "extraResources": [],
     "electronDownload": {
       "mirror": "https://npmmirror.com/mirrors/electron/"
     },
@@ -98,17 +91,12 @@
   },
   "dependencies": {
     "address": "^1.2.0",
-    "bwip-js": "^4.5.1",
     "concurrent-tasks": "^1.0.7",
     "dayjs": "^1.11.10",
     "electron-log": "^5.4.2",
     "electron-store": "^8.1.0",
     "ipp": "^2.0.1",
-    "jimp": "^1.6.0",
-    "jquery": "^3.6.0",
-    "jsbarcode": "^3.11.6",
     "node-machine-id": "^1.1.12",
-    "nzh": "^1.0.14",
     "pdf-to-printer": "^5.6.0",
     "socket.io": "^3.1.0",
     "socket.io-client": "^3.1.0",

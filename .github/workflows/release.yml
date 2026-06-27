@@ -149,6 +149,8 @@ jobs:
           body: |
             Github Actions 自动发布的 Release
 
+            本版本为精简版客户端，只支持 PDF BLOB（`type: "blob_pdf"`）打印方式；不再支持 HTML、PDF URL、模板 JSON 渲染、HTML 分片等打印方式。
+
             > [!IMPORTANT]
             > macOS 提示应用程序已经损坏，解决方案
             >

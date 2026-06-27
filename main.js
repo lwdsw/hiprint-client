@@ -20,7 +20,6 @@ const path = require("path");
 const server = require("http").createServer();
 const helper = require("./src/helper");
 const printSetup = require("./src/print");
-const renderSetup = require("./src/render");
 const setSetup = require("./src/set");
 const printLogSetup = require("./src/printLog");
 const {
@@ -62,12 +61,8 @@ if (store.get("disabledGpu")) {
 global.MAIN_WINDOW = null;
 // 托盘
 global.APP_TRAY = null;
-// 打印窗口
-global.PRINT_WINDOW = null;
 // 设置窗口
 global.SET_WINDOW = null;
-// 渲染窗口
-global.RENDER_WINDOW = null;
 // 打印日志窗口
 global.PRINT_LOG_WINDOW = null;
 // socket.io 服务端
@@ -78,19 +73,6 @@ global.SOCKET_CLIENT = null;
 global.PRINT_RUNNER = new TaskRunner({ concurrency: 1 });
 // 打印队列 done 集合
 global.PRINT_RUNNER_DONE = {};
-// 分批打印任务的打印任务信息
-global.PRINT_FRAGMENTS_MAPPING = {
-  // [id: string]: { // 当前打印任务id，当此任务完成或超过指定时间会删除该对象
-  //   {
-  //      total: number, // html片段总数
-  //      count: number, // 已经保存完成的片段数量，当count与total相同时，所有片段传输完成
-  //      fragments: Array<string | undefined>, // 按照顺序摆放的html文本片段
-  //      updateTime: number, // 最后更新此任务信息的时间戳，用于超时时移除此对象
-  //   }
-  // }
-};
-global.RENDER_RUNNER = new TaskRunner({ concurrency: 1 });
-global.RENDER_RUNNER_DONE = {};
 
 // socket.io 服务端，用于创建本地服务
 const ioServer = (global.SOCKET_SERVER = new require("socket.io")(server, {
@@ -284,8 +266,6 @@ async function createWindow() {
   initTray();
   // 打印窗口初始化
   await printSetup();
-  // 渲染窗口初始化
-  await renderSetup();
 
   return MAIN_WINDOW;
 }

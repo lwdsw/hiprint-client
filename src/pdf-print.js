@@ -40,12 +40,6 @@ const getUnixPrintOptions = (data = {}) => {
   return options;
 };
 
-const randomStr = () => {
-  return Math.random()
-    .toString(36)
-    .substring(2);
-};
-
 const realPrint = (pdfPath, printer, data, resolve, reject) => {
   if (!fs.existsSync(pdfPath)) {
     reject({ path: pdfPath, msg: "file not found" });
@@ -56,26 +50,14 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
     data = Object.assign({}, data);
     data.printer = printer;
     console.log("print pdf:" + pdfPath + JSON.stringify(data));
-    // 参数见 node_modules/pdf-to-printer/dist/print/print.d.ts
-    // pdf打印文档：https://www.sumatrapdfreader.org/docs/Command-line-arguments
-    // pdf-to-printer 源码: https://github.com/artiebits/pdf-to-printer
-    let pdfOptions = Object.assign(data, { paperSize: data.paperName });
+    const pdfOptions = Object.assign(data, { paperSize: data.paperName });
     printPdfFunction(pdfPath, pdfOptions)
-      .then(() => {
-        resolve();
-      })
-      .catch(() => {
-        reject();
-      });
+      .then(resolve)
+      .catch(reject);
   } else {
-    // 参数见 lp 命令 使用方法, 使用外部传入的lp命令
     printPdfFunction(pdfPath, printer, getUnixPrintOptions(data))
-      .then(() => {
-        resolve();
-      })
-      .catch(() => {
-        reject();
-      });
+      .then(resolve)
+      .catch(reject);
   }
 };
 
@@ -104,50 +86,9 @@ const normalizePdfBlobToBuffer = (pdfBlob) => {
   return null;
 };
 
-const printPdf = (pdfPath, printer, data) => {
-  return new Promise((resolve, reject) => {
-    try {
-      if (typeof pdfPath !== "string") {
-        reject("pdfPath must be a string");
-      }
-      if (/^https?:\/\/.+/.test(pdfPath)) {
-        const client = pdfPath.startsWith("https")
-          ? require("https")
-          : require("http");
-        client
-          .get(pdfPath, (res) => {
-            const toSavePath = path.join(
-              store.get("pdfPath") || os.tmpdir(),
-              "url_pdf",
-              dayjs().format(`YYYY_MM_DD HH_mm_ss_`) + `${uuidv7()}.pdf`,
-            );
-            // 确保目录存在
-            fs.mkdirSync(path.dirname(toSavePath), { recursive: true });
-            const file = fs.createWriteStream(toSavePath);
-            res.pipe(file);
-            file.on("finish", () => {
-              file.close();
-              console.log("file downloaded:" + toSavePath);
-              realPrint(toSavePath, printer, data, resolve, reject);
-            });
-          })
-          .on("error", (err) => {
-            console.log("download pdf error:" + err?.message);
-            reject(err);
-          });
-        return;
-      }
-      realPrint(pdfPath, printer, data, resolve, reject);
-    } catch (error) {
-      console.log("print error:" + error?.message);
-      reject(error);
-    }
-  });
-};
-
 /**
  * @description: 打印Blob类型的PDF数据
- * @param {Blob|Uint8Array|Buffer} pdfBlob PDF的二进制数据
+ * @param {Blob|Uint8Array|Buffer|string} pdfBlob PDF的二进制数据/base64/dataUri
  * @param {string} printer 打印机名称
  * @param {object} data 打印参数
  * @return {Promise}
@@ -161,17 +102,14 @@ const printPdfBlob = (pdfBlob, printer, data) => {
         return;
       }
 
-      // 生成临时文件路径
       const toSavePath = path.join(
         store.get("pdfPath") || os.tmpdir(),
         "blob_pdf",
         dayjs().format(`YYYY_MM_DD HH_mm_ss_`) + `${uuidv7()}.pdf`,
       );
 
-      // 确保目录存在
       fs.mkdirSync(path.dirname(toSavePath), { recursive: true });
 
-      // 写入文件
       fs.writeFile(toSavePath, buffer, (err) => {
         if (err) {
           console.log("save blob pdf error:" + err?.message);
@@ -180,8 +118,6 @@ const printPdfBlob = (pdfBlob, printer, data) => {
         }
 
         console.log("blob pdf saved:" + toSavePath);
-
-        // 调用打印函数
         realPrint(toSavePath, printer, data, resolve, reject);
       });
     } catch (error) {
@@ -192,6 +128,5 @@ const printPdfBlob = (pdfBlob, printer, data) => {
 };
 
 module.exports = {
-  printPdf,
   printPdfBlob,
 };
