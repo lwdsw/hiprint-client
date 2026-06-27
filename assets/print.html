@@ -82,6 +82,105 @@
         return value;
       };
 
+
+      const cssLengthToPx = (value) => {
+        if (!value) return 0;
+        const text = String(value).trim();
+        if (!text || text === "auto" || text.endsWith("%")) return 0;
+        const numberValue = parseFloat(text);
+        if (!Number.isFinite(numberValue)) return 0;
+        if (text.endsWith("pt")) return (numberValue * 96) / 72;
+        if (text.endsWith("mm")) return (numberValue * 96) / 25.4;
+        if (text.endsWith("cm")) return (numberValue * 96) / 2.54;
+        if (text.endsWith("in")) return numberValue * 96;
+        return numberValue;
+      };
+
+      const resolvePercentLength = (value, parentSize) => {
+        if (!value || !String(value).trim().endsWith("%")) return 0;
+        const percent = parseFloat(value);
+        if (!Number.isFinite(percent)) return 0;
+        return (parentSize * percent) / 100;
+      };
+
+      const getElementCanvasSize = (element) => {
+        if (!element) return { width: 1, height: 1 };
+        const rect = element.getBoundingClientRect?.();
+        let width = rect && rect.width ? rect.width : 0;
+        let height = rect && rect.height ? rect.height : 0;
+        width ||= cssLengthToPx(element.style?.width);
+        height ||= cssLengthToPx(element.style?.height);
+        const computed = window.getComputedStyle ? window.getComputedStyle(element) : undefined;
+        width ||= cssLengthToPx(computed?.width);
+        height ||= cssLengthToPx(computed?.height);
+        if ((!width || !height) && element.parentElement) {
+          const parentSize = getElementCanvasSize(element.parentElement);
+          width ||= resolvePercentLength(element.style?.width || computed?.width, parentSize.width);
+          height ||= resolvePercentLength(element.style?.height || computed?.height, parentSize.height);
+          width ||= parentSize.width;
+          height ||= parentSize.height;
+        }
+        return { width: width || 1, height: height || 1 };
+      };
+
+      const getSvgCanvasSize = (svg) => {
+        const svgWidth = cssLengthToPx(svg.getAttribute("width") || svg.style.width);
+        const svgHeight = cssLengthToPx(svg.getAttribute("height") || svg.style.height);
+        const parentSize = getElementCanvasSize(svg.parentElement);
+        return {
+          width: Math.max(1, Math.round(svgWidth || parentSize.width || 1)),
+          height: Math.max(1, Math.round(svgHeight || parentSize.height || 1)),
+        };
+      };
+
+      const renderSvgToCanvas = async (svg, canvas, size) => {
+        const clonedSvg = svg.cloneNode(true);
+        clonedSvg.setAttribute("width", `${size.width}`);
+        clonedSvg.setAttribute("height", `${size.height}`);
+        if (!clonedSvg.getAttribute("preserveAspectRatio")) {
+          clonedSvg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+        }
+        const source = new XMLSerializer().serializeToString(clonedSvg);
+        const context = canvas.getContext("2d");
+        const canvgRuntime = window.canvg || (typeof canvg !== "undefined" ? canvg : undefined);
+        const CanvgCtor = canvgRuntime?.Canvg || canvgRuntime?.default;
+        if (CanvgCtor?.fromString && context) {
+          const renderer = CanvgCtor.fromString(context, source, {
+            ignoreDimensions: true,
+            ignoreAnimation: true,
+            ignoreMouse: true,
+          });
+          await renderer.render();
+          return;
+        }
+        if (typeof canvgRuntime === "function") {
+          canvgRuntime(canvas, source, {
+            ignoreDimensions: true,
+            ignoreAnimation: true,
+            ignoreMouse: true,
+          });
+          return;
+        }
+        throw new Error("canvg is not defined");
+      };
+
+      const svg2canvas = async (target) => {
+        const tasks = [];
+        target.querySelectorAll("svg").forEach((svg) => {
+          const parent = svg.parentNode;
+          const size = getSvgCanvasSize(svg);
+          const canvas = document.createElement("canvas");
+          canvas.width = size.width;
+          canvas.height = size.height;
+          canvas.style.width = `${size.width}px`;
+          canvas.style.height = `${size.height}px`;
+          parent.insertBefore(canvas, svg);
+          parent.removeChild(svg);
+          tasks.push(renderSvgToCanvas(svg, canvas, size));
+        });
+        await Promise.all(tasks);
+      };
+
       const ensurePdfDependencies = (() => {
         let promise;
         return () => {
@@ -137,13 +236,27 @@
         container.style.margin = "0";
         container.innerHTML = printableHtml;
         document.body.appendChild(container);
+        await svg2canvas(container);
         const paper = container.querySelector(".hiprint-printPaper");
-        const target = container.firstElementChild || container;
+        const target =
+          container.querySelector(".hiprint-printTemplate") ||
+          container.querySelector(".hiprint-printPanel") ||
+          paper ||
+          Array.from(container.children).find(
+            (child) => !["STYLE", "LINK", "SCRIPT"].includes(child.tagName),
+          ) ||
+          container;
         const pageCount = Math.max(
           1,
           container.querySelectorAll(".hiprint-printPaper").length,
         );
-        const rect = (paper || target).getBoundingClientRect();
+        const paperRect = (paper || target).getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        if (!paperRect.width || !paperRect.height || !targetRect.width || !targetRect.height) {
+          throw new Error(
+            `HTML 渲染尺寸异常，无法生成 PDF：target=${target.tagName}.${target.className || ""}, width=${targetRect.width}, height=${targetRect.height}`,
+          );
+        }
         const pdf = new JsPdfCtor({
           orientation: data.landscape ? "landscape" : "portrait",
           unit: "pt",
@@ -151,9 +264,9 @@
         });
         const canvas = await html2canvasFactory(target, {
           scale: data.pdfScale || 2,
-          width: rect.width || target.scrollWidth,
-          x: Math.floor(rect.left),
-          y: Math.floor(rect.top),
+          width: paperRect.width || target.scrollWidth,
+          x: Math.floor(targetRect.left),
+          y: Math.floor(targetRect.top),
           useCORS: true,
         });
         const context = canvas.getContext("2d");
@@ -162,6 +275,11 @@
         context.msImageSmoothingEnabled = false;
         context.imageSmoothingEnabled = false;
         const image = canvas.toDataURL("image/jpeg");
+        if (!image || image === "data:,") {
+          throw new Error(
+            `HTML canvas 导出失败，无法生成 PDF：canvas=${canvas.width}x${canvas.height}`,
+          );
+        }
         for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
           pdf.addImage(
             image,
