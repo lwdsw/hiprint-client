@@ -13,6 +13,7 @@ const {
   Tray,
   Menu,
   shell,
+  nativeImage,
 } = require("electron");
 const electronLog = require("electron-log");
 const path = require("path");
@@ -182,7 +183,7 @@ async function initialize() {
 async function createWindow() {
   const windowOptions = {
     width: 500, // 窗口宽度
-    height: 300, // 窗口高度
+    height: 180, // 窗口高度
     title: store.get("mainTitle") || "ArcoPrint",
     useContentSize: true, // 窗口大小不包含边框
     center: true, // 居中
@@ -352,9 +353,19 @@ function showMainWindow() {
  * @return {Tray} APP_TRAY 托盘实例
  */
 function initTray() {
-  let trayPath = path.join(app.getAppPath(), "assets/icons/tray.png");
+  const trayPath = path.join(
+    app.getAppPath(),
+    process.platform === "darwin"
+      ? "assets/icons/trayTemplate.png"
+      : "assets/icons/tray.png",
+  );
+  const trayImage = nativeImage.createFromPath(trayPath);
 
-  APP_TRAY = new Tray(trayPath);
+  if (process.platform === "darwin") {
+    trayImage.setTemplateImage(true);
+  }
+
+  APP_TRAY = new Tray(trayImage);
 
   // 托盘提示标题
   APP_TRAY.setToolTip("ArcoPrint");

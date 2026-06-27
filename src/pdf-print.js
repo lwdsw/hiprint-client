@@ -18,6 +18,28 @@ const { v7: uuidv7 } = require("uuid");
 const printPdfFunction =
   process.platform === "win32" ? pdfPrint1.print : pdfPrint2.print;
 
+const normalizeMediaName = (pageSize) => {
+  if (typeof pageSize !== "string") return "";
+  const value = pageSize.trim().toLowerCase();
+  if (value === "a4") return "A4";
+  if (value === "letter") return "Letter";
+  return "";
+};
+
+const getUnixPrintOptions = (data = {}) => {
+  const options = Array.isArray(data.unixPrintOptions)
+    ? [...data.unixPrintOptions]
+    : [];
+  const hasMediaOption = options.some((option) =>
+    /(^|\s)(media|PageSize)=/i.test(option),
+  );
+  const media = normalizeMediaName(data.pageSize) || "A4";
+  if (!hasMediaOption && media) {
+    options.push(`-o media=${media}`);
+  }
+  return options;
+};
+
 const randomStr = () => {
   return Math.random()
     .toString(36)
@@ -47,7 +69,7 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
       });
   } else {
     // 参数见 lp 命令 使用方法, 使用外部传入的lp命令
-    printPdfFunction(pdfPath, printer, data.unixPrintOptions || [])
+    printPdfFunction(pdfPath, printer, getUnixPrintOptions(data))
       .then(() => {
         resolve();
       })
@@ -55,6 +77,31 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
         reject();
       });
   }
+};
+
+const normalizePdfBlobToBuffer = (pdfBlob) => {
+  if (!pdfBlob) return null;
+  if (Buffer.isBuffer(pdfBlob)) return pdfBlob;
+  if (pdfBlob instanceof Uint8Array) {
+    return Buffer.from(pdfBlob.buffer, pdfBlob.byteOffset, pdfBlob.byteLength);
+  }
+  if (pdfBlob instanceof ArrayBuffer) {
+    return Buffer.from(pdfBlob);
+  }
+  if (Array.isArray(pdfBlob)) {
+    return Buffer.from(pdfBlob);
+  }
+  if (typeof pdfBlob === "string") {
+    const base64 = pdfBlob.includes(",") ? pdfBlob.split(",").pop() : pdfBlob;
+    return Buffer.from(`${base64 || ""}`.replace(/\s/g, ""), "base64");
+  }
+  if (pdfBlob.type === "Buffer" && Array.isArray(pdfBlob.data)) {
+    return Buffer.from(pdfBlob.data);
+  }
+  if (pdfBlob.data && Array.isArray(pdfBlob.data)) {
+    return Buffer.from(pdfBlob.data);
+  }
+  return null;
 };
 
 const printPdf = (pdfPath, printer, data) => {
@@ -108,13 +155,9 @@ const printPdf = (pdfPath, printer, data) => {
 const printPdfBlob = (pdfBlob, printer, data) => {
   return new Promise((resolve, reject) => {
     try {
-      // 验证blob数据 实际是 Uint8Array
-      if (
-        !pdfBlob ||
-        !(
-          pdfBlob instanceof Uint8Array || Buffer.isBuffer(pdfBlob))
-      ) {
-        reject(new Error("pdfBlob must be a Uint8Array, Buffer"));
+      const buffer = normalizePdfBlobToBuffer(pdfBlob);
+      if (!buffer || buffer.length === 0) {
+        reject(new Error("pdfBlob must be a Uint8Array, Buffer, ArrayBuffer or base64 string"));
         return;
       }
 
@@ -127,9 +170,6 @@ const printPdfBlob = (pdfBlob, printer, data) => {
 
       // 确保目录存在
       fs.mkdirSync(path.dirname(toSavePath), { recursive: true });
-
-      // Uint8Array 2 Buffer
-      const buffer = Buffer.isBuffer(pdfBlob) ? pdfBlob : Buffer.from(pdfBlob);
 
       // 写入文件
       fs.writeFile(toSavePath, buffer, (err) => {

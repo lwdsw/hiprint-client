@@ -84,6 +84,63 @@ if (fs.existsSync(buildInfoPath)) {
 
 Store.initRenderer();
 
+const normalizeDirectPrintPayload = (data) => {
+  const type = `${data?.type || ""}`.toLowerCase();
+  if (type === "blob_pdf") {
+    return {
+      ...data,
+      type: "blob_pdf",
+      pdf_blob:
+        data.pdf_blob ||
+        data.pdfBlob ||
+        data.pdf_base64 ||
+        data.pdfBase64 ||
+        data.pdfDataUri,
+    };
+  }
+  if (type === "url_pdf") {
+    return {
+      ...data,
+      type: "url_pdf",
+      pdf_path: data.pdf_path || data.pdfPath || data.url,
+    };
+  }
+  return data;
+};
+
+const isDirectPdfPrintPayload = (data) => {
+  const type = `${data?.type || ""}`.toLowerCase();
+  return type === "blob_pdf" || type === "url_pdf";
+};
+
+const dispatchPrintPayload = (data) => {
+  if (
+    isDirectPdfPrintPayload(data) &&
+    typeof global.PRINT_DIRECT_HANDLER === "function"
+  ) {
+    const directData = normalizeDirectPrintPayload(data);
+    console.log("[ArcoPrint][print-route] direct pdf print", {
+      type: directData.type,
+      templateId: directData.templateId,
+      hasPdfBlob: !!directData.pdf_blob,
+      hasPdfPath: !!directData.pdf_path,
+    });
+    Promise.resolve(global.PRINT_DIRECT_HANDLER(directData)).catch((error) => {
+      console.error(
+        "[ArcoPrint][print-route] direct pdf print failed:",
+        error && error.message ? error.message : error,
+      );
+      if (directData.taskId && PRINT_RUNNER_DONE[directData.taskId]) {
+        PRINT_RUNNER_DONE[directData.taskId]();
+        delete PRINT_RUNNER_DONE[directData.taskId];
+      }
+      MAIN_WINDOW?.webContents?.send("printTask", PRINT_RUNNER.isBusy());
+    });
+    return;
+  }
+  PRINT_WINDOW.webContents.send("print-new", data);
+};
+
 const schema = {
   mainTitle: {
     type: "string",
@@ -571,9 +628,9 @@ function initServeEvent(server) {
           data.socketId = socket.id;
           data.taskId = uuidv7();
           data.clientType = "local";
-          PRINT_WINDOW.webContents.send("print-new", data);
-          MAIN_WINDOW.webContents.send("printTask", true);
           PRINT_RUNNER_DONE[data.taskId] = done;
+          dispatchPrintPayload(data);
+          MAIN_WINDOW.webContents.send("printTask", true);
         });
       }
     });
@@ -609,9 +666,9 @@ function initServeEvent(server) {
             data.socketId = socket.id;
             data.taskId = uuidv7();
             data.clientType = "local";
-            PRINT_WINDOW.webContents.send("print-new", data);
-            MAIN_WINDOW.webContents.send("printTask", true);
             PRINT_RUNNER_DONE[data.taskId] = done;
+            dispatchPrintPayload(data);
+            MAIN_WINDOW.webContents.send("printTask", true);
           });
         }
         // 开始检查任务
@@ -822,9 +879,9 @@ function initClientEvent() {
         data.socketId = client.id;
         data.taskId = uuidv7();
         data.clientType = "transit";
-        PRINT_WINDOW.webContents.send("print-new", data);
-        MAIN_WINDOW.webContents.send("printTask", true);
         PRINT_RUNNER_DONE[data.taskId] = done;
+        dispatchPrintPayload(data);
+        MAIN_WINDOW.webContents.send("printTask", true);
       });
     }
   });

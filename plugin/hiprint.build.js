@@ -5365,10 +5365,10 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     /**
      * 中文说明：通过 WebSocket 向本地打印客户端发送模板打印指令或状态消息。
      */
-    send(payload) {
+    send(payload, eventName = "news") {
       var _a;
       try {
-        (_a = this.socket) == null ? void 0 : _a.emit("news", payload);
+        (_a = this.socket) == null ? void 0 : _a.emit(eventName, payload);
       } catch (error) {
         console.log(`send data error:${payload || ""}${JSON.stringify(error)}`);
       }
@@ -5432,7 +5432,7 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
       return this.endpoint;
     },
     /**
-     * 中文说明：设置本地打印客户端连接 token，通过 Socket.IO query.token 传给客户端。
+     * 中文说明：设置本地打印客户端连接 token，通过 Socket.IO auth.token 传给客户端。
      */
     setToken(token) {
       const nextToken = (token || "").trim();
@@ -5461,9 +5461,16 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
         if (!this.socket) {
           const ioFactory = globalThis.io;
           if (!ioFactory) throw new Error("运行时依赖缺失：global `io` is required by hiwebSocket.start");
-          const socketOptions = { reconnectionAttempts: 5, autoConnect: false };
-          if (this.token) socketOptions.query = { token: this.token };
-          this.socket = ioFactory(this.endpoint || DEFAULT_CLIENT_PRINT_ENDPOINT, socketOptions);
+          const endpoint = this.endpoint || DEFAULT_CLIENT_PRINT_ENDPOINT;
+          const socketOptions = {
+            transports: ["websocket", "polling"],
+            reconnectionAttempts: 5,
+            autoConnect: false,
+            auth: {
+              token: this.token
+            }
+          };
+          this.socket = ioFactory(endpoint, socketOptions);
           this.socket.on("printerList", (payload) => {
             runtime.printerList = Array.isArray(payload) ? payload : void 0;
           });
@@ -5478,11 +5485,21 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
             const eventBus = globalThis.hinnn;
             eventBus == null ? void 0 : eventBus.event.trigger(`printSuccess_${payload.templateId}`, payload);
           });
+          this.socket.on("render-print-success", (payload) => {
+            if (!(payload == null ? void 0 : payload.templateId)) return;
+            const eventBus = globalThis.hinnn;
+            eventBus == null ? void 0 : eventBus.event.trigger(`printSuccess_${payload.templateId}`, payload);
+          });
           this.socket.on("error", (payload) => {
             if (!(payload == null ? void 0 : payload.templateId)) {
               emitConnectionError(runtime, payload);
               return;
             }
+            const eventBus = globalThis.hinnn;
+            eventBus == null ? void 0 : eventBus.event.trigger(`printError_${payload.templateId}`, payload);
+          });
+          this.socket.on("render-print-error", (payload) => {
+            if (!(payload == null ? void 0 : payload.templateId)) return;
             const eventBus = globalThis.hinnn;
             eventBus == null ? void 0 : eventBus.event.trigger(`printError_${payload.templateId}`, payload);
           });
@@ -12795,6 +12812,21 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
     if (typeof pdfValue !== "string") return void 0;
     return pdfValue.indexOf(",") > -1 ? pdfValue.split(",")[1] : pdfValue;
   }
+  function base64ToUint8Array(base64) {
+    const normalized = base64.replace(/\s/g, "");
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+  async function toPdfUint8Array(pdfValue) {
+    if (pdfValue instanceof Uint8Array) return pdfValue;
+    if (pdfValue instanceof ArrayBuffer) return new Uint8Array(pdfValue);
+    if (pdfValue instanceof Blob) return new Uint8Array(await pdfValue.arrayBuffer());
+    return base64ToUint8Array(toPdfBase64(pdfValue) || "");
+  }
   class PrintTemplateEntity {
     /**
      * 中文说明：初始化打印模板对象，保存后续渲染、设计或交互所需的状态。
@@ -13343,6 +13375,60 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
       }
     }
     /**
+     * 中文说明：发送 PDF URL 或本地 PDF 文件路径给本地客户端打印。
+     */
+    printUrlPdf2(pdfPath, options2) {
+      options2 || (options2 = {});
+      if (!ensureClientPrintOpened(this.id)) return;
+      if (!pdfPath) {
+        hinnn.event.trigger(`printError_${this.id}`, {
+          templateId: this.id,
+          message: "PDF 路径不能为空"
+        });
+        return;
+      }
+      const sendOptions = createClientPrintPayload(this.id, "url_pdf", options2);
+      sendOptions.pdf_path = pdfPath;
+      hiwebSocket.send(sendOptions);
+    }
+    /**
+     * 中文说明：按客户端 printByFragments 协议分片发送 HTML，适合大体积 HTML 打印。
+     */
+    printByFragments(html, options2) {
+      options2 || (options2 = {});
+      if (!ensureClientPrintOpened(this.id)) return;
+      this.collectPrintStyles((cssText) => {
+        const fullHtml = cssText + $(html)[0].outerHTML;
+        const fragmentSize = Math.max(1, Number(options2.fragmentSize) || 6e4);
+        const total = Math.max(1, Math.ceil(fullHtml.length / fragmentSize));
+        const fragmentId = options2.id || HiPrintlib.instance.guid();
+        for (let index = 0; index < total; index += 1) {
+          const payload = $.extend({}, options2, {
+            id: fragmentId,
+            templateId: options2.templateId || this.id,
+            total,
+            index,
+            htmlFragment: fullHtml.slice(index * fragmentSize, (index + 1) * fragmentSize)
+          });
+          hiwebSocket.send(payload, "printByFragments");
+        }
+      });
+    }
+    /**
+     * 中文说明：发送模板 JSON 和打印数据给客户端，由客户端渲染后打印。
+     */
+    renderPrint(data, options2) {
+      data || (data = {});
+      options2 || (options2 = {});
+      if (!ensureClientPrintOpened(this.id)) return;
+      const payload = $.extend({}, options2, {
+        templateId: options2.templateId || this.id,
+        template: this.getJson(),
+        data
+      });
+      hiwebSocket.send(payload, "render-print");
+    }
+    /**
      * 中文说明：删除print element，同步调整打印模板的结构和选择状态。
      */
     deletePrintElement(printElement) {
@@ -13458,26 +13544,34 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
         return;
       }
       const sendOptions = createClientPrintPayload(this.id, "blob_pdf", options2);
-      sendOptions.pdf_blob = pdfBlob;
       const pdfBase64 = toPdfBase64(pdfBlob);
-      if (pdfBase64) {
-        sendOptions.pdf_base64 = pdfBase64;
-        sendOptions.pdfBase64 = pdfBase64;
-        if (typeof pdfBlob === "string" && pdfBlob.indexOf(",") > -1) {
-          sendOptions.pdfDataUri = pdfBlob;
+      toPdfUint8Array(pdfBlob).then((pdfBytes) => {
+        sendOptions.pdf_blob = pdfBytes;
+        sendOptions.pdfBlob = pdfBytes;
+        if (pdfBase64) {
+          sendOptions.pdf_base64 = pdfBase64;
+          sendOptions.pdfBase64 = pdfBase64;
+          if (typeof pdfBlob === "string" && pdfBlob.indexOf(",") > -1) {
+            sendOptions.pdfDataUri = pdfBlob;
+          }
         }
-      }
-      hiwebSocket.send(sendOptions);
+        hiwebSocket.send(sendOptions);
+      }).catch((error) => {
+        hinnn.event.trigger(`printError_${this.id}`, {
+          templateId: this.id,
+          message: error && error.message ? error.message : String(error)
+        });
+      });
     }
     /**
      * 中文说明：生成 PDF 后发送到本地客户端打印，保留原 WebSocket 事件模型。
      */
-    printPdf2(data, options2) {
+    printPdf2(data, clientOptions, pdfOptions) {
       data || (data = {});
-      options2 || (options2 = {});
+      clientOptions || (clientOptions = {});
       if (ensureClientPrintOpened(this.id)) {
-        this.toPdfDataUri(data, options2).then((pdfDataUri) => {
-          this.printBlobPdf2(pdfDataUri, options2);
+        this.toPdfDataUri(data, pdfOptions).then((pdfDataUri) => {
+          this.printBlobPdf2(pdfDataUri, clientOptions);
         }).catch((error) => {
           hinnn.event.trigger(`printError_${this.id}`, {
             templateId: this.id,

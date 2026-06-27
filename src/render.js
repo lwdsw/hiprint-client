@@ -5,6 +5,7 @@ const { app, BrowserWindow, ipcMain, dialog, screen } = require("electron");
 const path = require("path");
 const { Jimp } = require("jimp");
 const dayjs = require("dayjs");
+const { printPdfBlob } = require("./pdf-print");
 
 const { store, getCurrentPrintStatusByName } = require("../tools/utils");
 const db = require("../tools/database");
@@ -42,24 +43,12 @@ let windowWorkArea = {
  * @property {number} right 右边距
  */
 
-/**
- * @typedef {Object} PrintToPDFData
- * @property {string} clientType socket 客户端类型  'local' | 'transit'
- * @property {string} socketId socket id
- * @property {string} replyId 中转回复 id
- * @property {string} templateId 模版 id
- * @property {string} taskId 任务 id
- * @property {boolean} landscape 网页是否应以横向模式打印 默认 true
- * @property {boolean} displayHeaderFooter 是否显示页眉和页脚 默认 false
- * @property {boolean} printBackground 是否打印背景图形 默认 false
- * @property {number} scale  网页渲染的比例 默认 1
- * @property {string | PageSize} pageSize 指定生成的 PDF 的页面大小 默认 Letter
- * @property {string | Margins} margins 边距
- * @property {string} pageRanges 要打印的页面范围 例如 '1-5, 8, 11-13'
- * @property {string} headerTemplate 打印标题的 HTML 模板
- * @property {string} footerTemplate 打印页脚的 HTML 模板
- * @property {number} preferCSSPageSize 是否优先使用 css 定义的页面大小
- */
+const finishRenderTask = (data) => {
+  if (data.taskId && RENDER_RUNNER_DONE[data.taskId]) {
+    RENDER_RUNNER_DONE[data.taskId]();
+    delete RENDER_RUNNER_DONE[data.taskId];
+  }
+};
 
 /**
  * @description: 创建打印窗口
@@ -243,65 +232,66 @@ async function capturePage(event, data) {
 }
 
 /**
- * @description: 打印到PDF
+ * @description: 接收渲染进程用 hiprint/html2canvas/jsPDF 生成的 PDF blob
  * @param {IpcMainEvent} event 事件
- * @param {PrintToPDFData} data 打印数据
+ * @param {object} data PDF 数据
  */
-function printToPDF(event, data) {
+function renderPdfBlob(event, data) {
   let socket = null;
   if (data.clientType === "local") {
     socket = SOCKET_SERVER.sockets.sockets.get(data.socketId);
   } else {
     socket = SOCKET_CLIENT;
   }
-  RENDER_WINDOW.webContents
-    .printToPDF({
-      landscape: data.landscape ?? false, // 横向打印
-      displayHeaderFooter: data.displayHeaderFooter ?? false, // 显示页眉页脚
-      printBackground: data.printBackground ?? true, // 打印背景色
-      scale: data.scale ?? 1, // 渲染比例 默认 1
-      pageSize: data.pageSize,
-      margins: data.margins, // 边距
-      pageRanges: data.pageRanges, // 打印页数范围
-      headerTemplate: data.headerTemplate, // 页头模板 (html)
-      footerTemplate: data.footerTemplate, // 页脚模板 (html)
-      preferCSSPageSize: data.preferCSSPageSize ?? false,
-    })
-    .then((buffer) => {
-      // 未打包调试模式下将pdf保存到桌面
-      if (!app.isPackaged) {
-        fs.writeFile(
-          path.join(
-            app.getPath("desktop"),
-            `pdf_${dayjs().format("YYYY-MM-DD HH_mm_ss")}.pdf`,
-          ),
-          buffer,
-          () => {},
-        );
-      }
+
+  const fail = (message) => {
+    console.log(
+      `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模版 【${
+        data.templateId
+      }】 获取 pdf 失败，原因：${message}`,
+    );
+    socket &&
+      socket.emit("render-pdf-error", {
+        msg: message,
+        templateId: data.templateId,
+        replyId: data.replyId,
+      });
+    finishRenderTask(data);
+  };
+
+  if (data.pdfGenerateError) {
+    fail(data.pdfGenerateError);
+    return;
+  }
+
+  if (!data.pdf_blob) {
+    fail("jsPDF 未返回 PDF blob");
+    return;
+  }
+
+  try {
+    const buffer = Buffer.isBuffer(data.pdf_blob)
+      ? data.pdf_blob
+      : Buffer.from(data.pdf_blob);
+
+    if (!app.isPackaged) {
+      fs.writeFile(
+        path.join(app.getPath("desktop"), `pdf_${dayjs().format("YYYY-MM-DD HH_mm_ss")}.pdf`),
+        buffer,
+        () => {},
+      );
+    }
+
+    socket &&
       socket.emit("render-pdf-success", {
         templateId: data.templateId,
         buffer,
         replyId: data.replyId,
       });
-    })
-    .catch((error) => {
-      console.log(
-        `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模版 【${
-          data.templateId
-        }】 获取 pdf 失败`,
-      );
-      socket &&
-        socket.emit("render-pdf-error", {
-          msg: `获取 pdf 失败`,
-          templateId: data.templateId,
-          replyId: data.replyId,
-        });
-    })
-    .finally(() => {
-      RENDER_RUNNER_DONE[data.taskId]();
-      delete RENDER_RUNNER_DONE[data.taskId];
-    });
+    finishRenderTask(data);
+  } catch (error) {
+    fail(error && error.message ? error.message : String(error));
+  }
 }
 
 /**
@@ -392,65 +382,97 @@ async function printFun(event, data) {
     );
   };
 
-  // 打印 详见https://www.electronjs.org/zh/docs/latest/api/web-contents
-  RENDER_WINDOW.webContents.print(
-    {
-      silent: data.silent ?? true, // 静默打印
-      printBackground: data.printBackground ?? true, // 是否打印背景
-      deviceName: deviceName, // 打印机名称
-      color: data.color ?? true, // 是否打印颜色
-      margins: data.margins ?? {
-        marginType: "none",
-      }, // 边距
-      landscape: data.landscape ?? false, // 是否横向打印
-      scaleFactor: data.scaleFactor ?? 100, // 打印缩放比例
-      pagesPerSheet: data.pagesPerSheet ?? 1, // 每张纸的页数
-      collate: data.collate ?? true, // 是否排序
-      copies: data.copies ?? 1, // 打印份数
-      pageRanges: data.pageRanges ?? {}, // 打印页数
-      duplexMode: data.duplexMode, // 打印模式 simplex,shortEdge,longEdge
-      dpi: data.dpi ?? 300, // 打印机DPI
-      header: data.header, // 打印头
-      footer: data.footer, // 打印尾
-      pageSize: data.pageSize, // 打印纸张
-    },
-    (success, failureReason) => {
-      if (socket) {
-        if (success) {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-              data.templateId
-            }】 打印成功，打印类型 JSON，打印机：${deviceName}，页数：${
-              data.pageNum
-            }`,
-          );
-          const result = {
-            msg: "打印成功",
-            templateId: data.templateId,
-            replyId: data.replyId,
-          };
-          logPrintResult("success");
-          socket.emit("render-print-success", result);
-        } else {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-              data.templateId
-            }】 打印失败，打印类型 JSON，打印机：${deviceName}，原因：${failureReason}`,
-          );
-          logPrintResult("failed", failureReason);
+  if (data.pdfGenerateError) {
+    const errorMessage = data.pdfGenerateError;
+    console.log(
+      `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+        data.templateId
+      }】 打印失败，打印类型 JSON_BLOB_PDF，打印机：${deviceName}，原因：${errorMessage}`,
+    );
+    logPrintResult("failed", errorMessage);
+    socket &&
+      socket.emit("render-print-error", {
+        msg: errorMessage,
+        templateId: data.templateId,
+        replyId: data.replyId,
+      });
+    finishRenderTask(data);
+    return;
+  }
+
+  if (`${data.type || ""}`.toLowerCase() === "blob_pdf") {
+    if (!data.pdf_blob) {
+      const errorMessage = "blob_pdf类型打印缺少pdf_blob参数";
+      console.log(
+        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+          data.templateId
+        }】 打印失败，打印类型 JSON_BLOB_PDF，打印机：${deviceName}，原因：${errorMessage}`,
+      );
+      logPrintResult("failed", errorMessage);
+      socket &&
+        socket.emit("render-print-error", {
+          msg: errorMessage,
+          templateId: data.templateId,
+          replyId: data.replyId,
+        });
+      finishRenderTask(data);
+      return;
+    }
+    const pdfBlob = data.pdf_blob;
+    delete data.pdf_blob;
+    printPdfBlob(pdfBlob, deviceName, data)
+      .then(() => {
+        console.log(
+          `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
+            data.templateId
+          }】 打印成功，打印类型 JSON_BLOB_PDF，打印机：${deviceName}，页数：${
+            data.pageNum
+          }`,
+        );
+        const result = {
+          msg: "打印成功",
+          templateId: data.templateId,
+          replyId: data.replyId,
+        };
+        logPrintResult("success");
+        socket && socket.emit("render-print-success", result);
+      })
+      .catch((err) => {
+        const errorMessage = err && err.message ? err.message : String(err);
+        console.log(
+          `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
+            data.templateId
+          }】 打印失败，打印类型 JSON_BLOB_PDF，打印机：${deviceName}，原因：${errorMessage}`,
+        );
+        logPrintResult("failed", errorMessage);
+        socket &&
           socket.emit("render-print-error", {
-            msg: failureReason,
+            msg: errorMessage,
             templateId: data.templateId,
             replyId: data.replyId,
           });
-        }
-      }
-      // 通过 taskMap 调用 task done 回调
-      RENDER_RUNNER_DONE[data.taskId]();
-      // 删除 task
-      delete RENDER_RUNNER_DONE[data.taskId];
-    },
+      })
+      .finally(() => {
+        finishRenderTask(data);
+      });
+    return;
+  }
+
+  const errorMessage =
+    "客户端已禁用 Chromium PDF 排版，请先在隐藏渲染窗口中用 jsPDF 生成 blob_pdf";
+  console.log(
+    `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+      data.templateId
+    }】 打印失败，打印类型 JSON_BLOB_PDF，打印机：${deviceName}，原因：${errorMessage}`,
   );
+  logPrintResult("failed", errorMessage);
+  socket &&
+    socket.emit("render-print-error", {
+      msg: errorMessage,
+      templateId: data.templateId,
+      replyId: data.replyId,
+    });
+  finishRenderTask(data);
 }
 
 /**
@@ -468,7 +490,7 @@ function showMessageBox(event, data) {
  */
 function initEvent() {
   ipcMain.on("capturePage", capturePage);
-  ipcMain.on("printToPDF", printToPDF);
+  ipcMain.on("renderPdfBlob", renderPdfBlob);
   ipcMain.on("print", printFun);
   ipcMain.on("showMessageBox", showMessageBox);
 }
@@ -479,7 +501,7 @@ function initEvent() {
  */
 function removeEvent() {
   ipcMain.removeListener("capturePage", capturePage);
-  ipcMain.removeListener("printToPDF", printToPDF);
+  ipcMain.removeListener("renderPdfBlob", renderPdfBlob);
   ipcMain.removeListener("print", printFun);
   ipcMain.removeListener("showMessageBox", showMessageBox);
   RENDER_WINDOW = null;

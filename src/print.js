@@ -2,13 +2,9 @@
 
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
-const os = require("os");
-const fs = require("fs");
 const { printPdf, printPdfBlob } = require("./pdf-print");
 const { store, getCurrentPrintStatusByName } = require("../tools/utils");
 const db = require("../tools/database");
-const dayjs = require("dayjs");
-const { v7: uuidv7 } = require("uuid");
 
 /**
  * @description: 创建打印窗口
@@ -47,357 +43,183 @@ async function createPrintWindow() {
 }
 
 /**
+ * @description: 执行打印任务（主进程直接调用或渲染窗口 IPC 调用）
+ * @return {Promise<void>}
+ */
+async function handlePrintData(data = {}) {
+  const socket =
+    data.clientType === "local"
+      ? SOCKET_SERVER.sockets.sockets.get(data.socketId)
+      : SOCKET_CLIENT;
+
+  const printers = await PRINT_WINDOW.webContents.getPrintersAsync();
+  let defaultPrinter = data.printer || store.get("defaultPrinter", "");
+  const ENABLE_STATUS = process.platform === "win32" ? [0, 512, 1024] : [3];
+  let printerError = false;
+
+  printers.forEach((element) => {
+    if (element.isDefault && (defaultPrinter === "" || defaultPrinter == null)) {
+      defaultPrinter = element.name;
+    }
+    if (element.name === defaultPrinter && !ENABLE_STATUS.includes(element.status)) {
+      printerError = true;
+    }
+  });
+
+  const deviceName = defaultPrinter;
+  const donePrintTask = () => {
+    if (data.taskId && PRINT_RUNNER_DONE[data.taskId]) {
+      PRINT_RUNNER_DONE[data.taskId]();
+      delete PRINT_RUNNER_DONE[data.taskId];
+    }
+    MAIN_WINDOW?.webContents?.send("printTask", PRINT_RUNNER.isBusy());
+  };
+
+  const logPrintResult = (status, errorMessage = "") => {
+    db.run(
+      `INSERT INTO print_logs (socketId, clientType, printer, templateId, data, pageNum, status, rePrintAble, errorMessage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        socket?.id,
+        data.clientType,
+        deviceName,
+        data.templateId,
+        JSON.stringify(data),
+        data.pageNum,
+        status,
+        data.rePrintAble ?? 1,
+        errorMessage,
+      ],
+      (err) => {
+        if (err) console.error("Failed to log print result", err);
+      },
+    );
+  };
+
+  const emitError = (message) => {
+    socket?.emit("error", {
+      msg: message,
+      templateId: data.templateId,
+      replyId: data.replyId,
+    });
+  };
+
+  const emitSuccess = () => {
+    const result = {
+      msg: "打印成功",
+      templateId: data.templateId,
+      replyId: data.replyId,
+    };
+    socket?.emit("successs", result);
+    socket?.emit("success", result);
+  };
+
+  const fail = (printType, message) => {
+    console.log(
+      `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+        data.templateId
+      }】 打印失败，打印类型 ${printType}，打印机：${deviceName}，原因：${message}`,
+    );
+    logPrintResult("failed", message);
+    emitError(message);
+    donePrintTask();
+  };
+
+  if (printerError) {
+    const { StatusMsg } = getCurrentPrintStatusByName(defaultPrinter);
+    fail("UNKNOWN", `${data.printer || defaultPrinter}打印机异常：${StatusMsg}`);
+    return;
+  }
+
+  if (data.pdfGenerateError) {
+    fail("HTML_BLOB_PDF", data.pdfGenerateError);
+    return;
+  }
+
+  const type = `${data.type || ""}`.toLowerCase();
+
+  if (type === "blob_pdf") {
+    const pdfBlob = data.pdf_blob;
+    delete data.pdf_blob;
+    const printType = data.pdfGeneratedBy === "html" ? "HTML_BLOB_PDF" : "BLOB_PDF";
+
+    if (!pdfBlob) {
+      fail(printType, "blob_pdf类型打印缺少pdf_blob参数");
+      return;
+    }
+
+    try {
+      await printPdfBlob(pdfBlob, deviceName, data);
+      console.log(
+        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+          data.templateId
+        }】 打印成功，打印类型 ${printType}，打印机：${deviceName}，页数：${
+          data.pageNum
+        }`,
+      );
+      logPrintResult("success");
+      emitSuccess();
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      logPrintResult("failed", message);
+      console.log(
+        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+          data.templateId
+        }】 打印失败，打印类型 ${printType}，打印机：${deviceName}，原因：${message}`,
+      );
+      emitError(message);
+    } finally {
+      donePrintTask();
+    }
+    return;
+  }
+
+  if (type === "url_pdf") {
+    const pdfPath = data.pdf_path;
+    if (!pdfPath) {
+      fail("URL_PDF", "url_pdf类型打印缺少pdf_path参数");
+      return;
+    }
+
+    try {
+      await printPdf(pdfPath, deviceName, data);
+      console.log(
+        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+          data.templateId
+        }】 打印成功，打印类型：URL_PDF，打印机：${deviceName}，页数：${
+          data.pageNum
+        }`,
+      );
+      logPrintResult("success");
+      checkPrinterStatus(deviceName, emitSuccess);
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.log(
+        `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
+          data.templateId
+        }】 打印失败，打印类型：URL_PDF，打印机：${deviceName}，原因：${message}`,
+      );
+      logPrintResult("failed", message);
+      emitError(`打印失败: ${message}`);
+    } finally {
+      donePrintTask();
+    }
+    return;
+  }
+
+  fail(
+    "HTML_BLOB_PDF",
+    "客户端已禁用 Chromium PDF 排版，请先在隐藏打印窗口中用 jsPDF 生成 blob_pdf",
+  );
+}
+
+/**
  * @description: 绑定打印窗口事件
  * @return {Void}
  */
 function initPrintEvent() {
+  global.PRINT_DIRECT_HANDLER = handlePrintData;
   ipcMain.on("do", async (event, data) => {
-    let socket = null;
-    if (data.clientType === "local") {
-      socket = SOCKET_SERVER.sockets.sockets.get(data.socketId);
-    } else {
-      socket = SOCKET_CLIENT;
-    }
-    const printers = await PRINT_WINDOW.webContents.getPrintersAsync();
-    let havePrinter = false;
-    let defaultPrinter = data.printer || store.get("defaultPrinter", "");
-    // todo: 打印机状态对照表，根据打印机状态判断是否支持打印
-    // win32: https://learn.microsoft.com/en-us/windows/win32/printdocs/printer-info-2
-    // cups: https://www.cups.org/doc/cupspm.html#ipp_status_e
-    const ENABLE_STATUS = process.platform === "win32" ? [0, 512, 1024] : [3];
-    let printerError = false;
-    printers.forEach((element) => {
-      // 获取默认打印机
-      if (
-        element.isDefault &&
-        (defaultPrinter == "" || defaultPrinter == void 0)
-      ) {
-        defaultPrinter = element.name;
-      }
-      // 判断打印机状态是否允许打印
-      if (element.name === defaultPrinter) {
-        if (!ENABLE_STATUS.includes(element.status)) {
-          printerError = true;
-        }
-        havePrinter = true;
-      }
-    });
-    if (printerError) {
-      const { StatusMsg } = getCurrentPrintStatusByName(defaultPrinter);
-      console.log(
-        `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-          data.templateId
-        }】 打印失败，打印机异常，打印机：${defaultPrinter}, 打印机状态：${StatusMsg}`,
-      );
-      socket &&
-        socket.emit("error", {
-          msg: data.printer + "打印机异常",
-          templateId: data.templateId,
-          replyId: data.replyId,
-        });
-      if (data.taskId) {
-        // 通过 taskMap 调用 task done 回调
-        PRINT_RUNNER_DONE[data.taskId]();
-        delete PRINT_RUNNER_DONE[data.taskId];
-      }
-      MAIN_WINDOW.webContents.send("printTask", PRINT_RUNNER.isBusy());
-      return;
-    }
-    let deviceName = defaultPrinter;
-
-    const logPrintResult = (status, errorMessage = "") => {
-      db.run(
-        `INSERT INTO print_logs (socketId, clientType, printer, templateId, data, pageNum, status, rePrintAble, errorMessage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          socket?.id,
-          data.clientType,
-          deviceName,
-          data.templateId,
-          JSON.stringify(data),
-          data.pageNum,
-          status,
-          data.rePrintAble ?? 1,
-          errorMessage,
-        ],
-        (err) => {
-          if (err) {
-            console.error("Failed to log print result", err);
-          }
-        },
-      );
-    };
-
-    // pdf 打印
-    let isPdf = data.type && `${data.type}`.toLowerCase() === "pdf";
-    if (isPdf) {
-      const pdfPath = path.join(
-        store.get("pdfPath") || os.tmpdir(),
-        "hiprint",
-        dayjs().format(`YYYY_MM_DD HH_mm_ss_`) + `${uuidv7()}.pdf`,
-      );
-      fs.mkdirSync(path.dirname(pdfPath), {
-        recursive: true,
-      });
-      PRINT_WINDOW.webContents
-        .printToPDF({
-          landscape: data.landscape ?? false, // 横向打印
-          displayHeaderFooter: data.displayHeaderFooter ?? false, // 显示页眉页脚
-          printBackground: data.printBackground ?? true, // 打印背景色
-          scale: data.scale ?? 1, // 渲染比例 默认 1
-          pageSize: data.pageSize,
-          margins: data.margins ?? {
-            marginType: "none",
-          }, // 边距
-          pageRanges: data.pageRanges, // 打印页数范围
-          headerTemplate: data.headerTemplate, // 页头模板 (html)
-          footerTemplate: data.footerTemplate, // 页脚模板 (html)
-          preferCSSPageSize: data.preferCSSPageSize ?? false,
-        })
-        .then((pdfData) => {
-          fs.writeFileSync(pdfPath, pdfData);
-          printPdf(pdfPath, deviceName, data)
-            .then(() => {
-              console.log(
-                `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-                  data.templateId
-                }】 打印成功，打印类型：PDF，打印机：${deviceName}，页数：${
-                  data.pageNum
-                }`,
-              );
-              if (socket) {
-                const result = {
-                  msg: "打印成功",
-                  templateId: data.templateId,
-                  replyId: data.replyId,
-                };
-                socket.emit("successs", result); // 兼容旧版 successs 事件
-                socket.emit("success", result);
-              }
-              logPrintResult("success");
-            })
-            .catch((err) => {
-              console.log(
-                `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-                  data.templateId
-                }】 打印失败，打印类型：PDF，打印机：${deviceName}，原因：${
-                  err.message
-                }`,
-              );
-              socket &&
-                socket.emit("error", {
-                  msg: "打印失败: " + err.message,
-                  templateId: data.templateId,
-                  replyId: data.replyId,
-                });
-              logPrintResult("failed", err.message);
-            })
-            .finally(() => {
-              if (data.taskId) {
-                // 通过taskMap 调用 task done 回调
-                PRINT_RUNNER_DONE[data.taskId]();
-                // 删除 task
-                delete PRINT_RUNNER_DONE[data.taskId];
-              }
-              MAIN_WINDOW.webContents.send("printTask", PRINT_RUNNER.isBusy());
-            });
-        });
-      return;
-    }
-    // url_pdf 打印
-    const isUrlPdf = data.type && `${data.type}`.toLowerCase() === "url_pdf";
-    if (isUrlPdf) {
-      printPdf(data.pdf_path, deviceName, data)
-        .then(() => {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-              data.templateId
-            }】 打印成功，打印类型：URL_PDF，打印机：${deviceName}，页数：${
-              data.pageNum
-            }`,
-          );
-          if (socket) {
-            checkPrinterStatus(deviceName, () => {
-              const result = {
-                msg: "打印成功",
-                templateId: data.templateId,
-                replyId: data.replyId,
-              };
-              socket.emit("successs", result); // 兼容旧版 successs 事件
-              socket.emit("success", result);
-            });
-          }
-          logPrintResult("success");
-        })
-        .catch((err) => {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-              data.templateId
-            }】 打印失败，打印类型：URL_PDF，打印机：${deviceName}，原因：${
-              err.message
-            }`,
-          );
-          socket &&
-            socket.emit("error", {
-              msg: "打印失败: " + err.message,
-              templateId: data.templateId,
-              replyId: data.replyId,
-            });
-          logPrintResult("failed", err.message);
-        })
-        .finally(() => {
-          if (data.taskId) {
-            // 通过 taskMap 调用 task done 回调
-            PRINT_RUNNER_DONE[data.taskId]();
-            // 删除 task
-            delete PRINT_RUNNER_DONE[data.taskId];
-          }
-          MAIN_WINDOW.webContents.send("printTask", PRINT_RUNNER.isBusy());
-        });
-      return;
-    }
-
-    // blob_pdf 打印 - 直接接收二进制PDF数据
-    const isBlobPdf = data.type && `${data.type}`.toLowerCase() === "blob_pdf";
-    if (isBlobPdf) {
-      // 验证必要参数
-      if (!data.pdf_blob) {
-        const errorMsg = "blob_pdf类型打印缺少pdf_blob参数";
-        console.log(
-          `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-            data.templateId
-          }】 打印失败，原因：${errorMsg}`,
-        );
-        socket &&
-          socket.emit("error", {
-            msg: errorMsg,
-            templateId: data.templateId,
-            replyId: data.replyId,
-          });
-        logPrintResult("failed", errorMsg);
-        if (data.taskId) {
-          PRINT_RUNNER_DONE[data.taskId]();
-          delete PRINT_RUNNER_DONE[data.taskId];
-        }
-        MAIN_WINDOW.webContents.send("printTask", PRINT_RUNNER.isBusy());
-        return;
-      }
-      let pdfBlob = data.pdf_blob;
-      delete data.pdf_blob;
-      printPdfBlob(pdfBlob, deviceName, data)
-        .then(() => {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-              data.templateId
-            }】 打印成功，打印类型：BLOB_PDF，打印机：${deviceName}，页数：${
-              data.pageNum
-            }`,
-          );
-          if (socket) {
-            checkPrinterStatus(deviceName, () => {
-              const result = {
-                msg: "打印成功",
-                templateId: data.templateId,
-                replyId: data.replyId,
-              };
-              socket.emit("successs", result); // 兼容旧版 successs 事件
-              socket.emit("success", result);
-            });
-          }
-          logPrintResult("success");
-        })
-        .catch((err) => {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket.id} 模板 【${
-              data.templateId
-            }】 打印失败，打印类型：BLOB_PDF，打印机：${deviceName}，原因：${
-              err.message
-            }`,
-          );
-          socket &&
-            socket.emit("error", {
-              msg: "打印失败: " + err.message,
-              templateId: data.templateId,
-              replyId: data.replyId,
-            });
-          logPrintResult("failed", err.message);
-        })
-        .finally(() => {
-          if (data.taskId) {
-            // 通过 taskMap 调用 task done 回调
-            PRINT_RUNNER_DONE[data.taskId]();
-            // 删除 task
-            delete PRINT_RUNNER_DONE[data.taskId];
-          }
-          MAIN_WINDOW.webContents.send("printTask", PRINT_RUNNER.isBusy());
-        });
-      return;
-    }
-    // 打印 详见https://www.electronjs.org/zh/docs/latest/api/web-contents
-    PRINT_WINDOW.webContents.print(
-      {
-        silent: data.silent ?? true, // 静默打印
-        printBackground: data.printBackground ?? true, // 是否打印背景
-        deviceName: deviceName, // 打印机名称
-        color: data.color ?? true, // 是否打印颜色
-        margins: data.margins ?? {
-          marginType: "none",
-        }, // 边距
-        landscape: data.landscape ?? false, // 是否横向打印
-        scaleFactor: data.scaleFactor ?? 100, // 打印缩放比例
-        pagesPerSheet: data.pagesPerSheet ?? 1, // 每张纸的页数
-        collate: data.collate ?? true, // 是否排序
-        copies: data.copies ?? 1, // 打印份数
-        pageRanges: data.pageRanges ?? {}, // 打印页数
-        duplexMode: data.duplexMode, // 打印模式 simplex,shortEdge,longEdge
-        dpi: data.dpi ?? 300, // 打印机DPI
-        header: data.header, // 打印头
-        footer: data.footer, // 打印尾
-        pageSize: data.pageSize, // 打印纸张
-      },
-      (success, failureReason) => {
-        if (success) {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-              data.templateId
-            }】 打印成功，打印类型 HTML，打印机：${deviceName}，页数：${
-              data.pageNum
-            }`,
-          );
-          logPrintResult("success");
-        } else {
-          console.log(
-            `${data.replyId ? "中转服务" : "插件端"} ${socket?.id} 模板 【${
-              data.templateId
-            }】 打印失败，打印类型 HTML，打印机：${deviceName}，原因：${failureReason}`,
-          );
-          logPrintResult("failed", failureReason);
-        }
-        if (socket) {
-          if (success) {
-            const result = {
-              msg: "打印成功",
-              templateId: data.templateId,
-              replyId: data.replyId,
-            };
-            socket.emit("successs", result); // 兼容旧版 successs 事件
-            socket.emit("success", result);
-          } else {
-            socket.emit("error", {
-              msg: failureReason,
-              templateId: data.templateId,
-              replyId: data.replyId,
-            });
-          }
-        }
-        // 通过 taskMap 调用 task done 回调
-        if (data.taskId) {
-          PRINT_RUNNER_DONE[data.taskId]();
-          // 删除 task
-          delete PRINT_RUNNER_DONE[data.taskId];
-        }
-        MAIN_WINDOW.webContents.send("printTask", PRINT_RUNNER.isBusy());
-      },
-    );
+    await handlePrintData(data);
   });
 }
 

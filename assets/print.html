@@ -10,6 +10,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>打印窗口</title>
+    <link href="./css/hiprint.css" rel="stylesheet" />
     <link href="./css/print-lock.css" rel="stylesheet" />
     <link href="./css/print-lock.css" media="print" rel="stylesheet" />
     <style>
@@ -20,6 +21,162 @@
     </style>
     <script>
       window.$ = window.jQuery = require("jquery");
+      const fs = require("fs");
+      const os = require("os");
+      const path = require("path");
+      const { fileURLToPath } = require("url");
+
+      const loadScript = (src) => {
+        return new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.setAttribute("type", "text/javascript");
+          script.setAttribute("src", src);
+          script.onload = resolve;
+          script.onerror = () => reject(new Error(`无法加载脚本：${src}`));
+          document.head.append(script);
+        });
+      };
+
+      const loadBrowserScript = (src) => {
+        return new Promise((resolve, reject) => {
+          try {
+            const scriptUrl = new URL(src, window.location.href);
+            if (scriptUrl.protocol !== "file:") {
+              loadScript(src).then(resolve).catch(reject);
+              return;
+            }
+            const code = fs.readFileSync(fileURLToPath(scriptUrl), "utf8");
+            window.eval(
+              `(function(){var module=undefined;var exports=undefined;var define=undefined;\n${code}\n}).call(window);`,
+            );
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        });
+      };
+
+      const dataUriToUint8Array = (dataUri) => {
+        const base64 = `${dataUri || ""}`.split(",").pop() || "";
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+        return bytes;
+      };
+
+      const getPluginDir = () => {
+        if (location.href.includes("app.asar")) {
+          return "../../plugin";
+        }
+        return "../plugin";
+      };
+
+      const normalizePrintableHtml = (html) => {
+        if (html == null) return "";
+        if (html.jquery && html[0]) return html[0].outerHTML || html[0].innerHTML || "";
+        if (html instanceof Element) return html.outerHTML || html.innerHTML || "";
+        const value = `${html}`;
+        if (value === "undefined" || value === "null") return "";
+        return value;
+      };
+
+      const ensurePdfDependencies = (() => {
+        let promise;
+        return () => {
+          if (!promise) {
+            const pluginDir = getPluginDir();
+            promise = loadBrowserScript(`${pluginDir}/jspdf/canvg.min.js`)
+              .then(() =>
+                loadBrowserScript(`${pluginDir}/jspdf/html2canvas.min.js`),
+              )
+              .then(() =>
+                loadBrowserScript(`${pluginDir}/jspdf/jspdf.min.js`),
+              );
+          }
+          return promise;
+        };
+      })();
+
+      const saveDebugBlobPdf = (pdfBlob, data) => {
+        try {
+          const pdfPath =
+            data.pdfPath ||
+            path.join(os.homedir(), "Downloads", "arcoprint");
+          const debugDir = path.join(pdfPath, "blob_debug_pdf");
+          fs.mkdirSync(debugDir, { recursive: true });
+          const safeTemplateId = `${data.templateId || "no-template"}`
+            .replace(/[^\w.-]+/g, "_")
+            .slice(0, 80);
+          const filePath = path.join(
+            debugDir,
+            `${Date.now()}_${safeTemplateId}.pdf`,
+          );
+          fs.writeFileSync(filePath, Buffer.from(pdfBlob));
+          console.log(`blob debug pdf saved:${filePath}`);
+        } catch (error) {
+          console.warn("save blob debug pdf error:" + error?.message);
+        }
+      };
+
+      const createPdfBlobFromHtml = async (html, data) => {
+        await ensurePdfDependencies();
+        const JsPdfCtor = window.jsPDF || window.jspdf?.jsPDF;
+        const html2canvasFactory = window.html2canvas;
+        if (!JsPdfCtor) throw new Error("jsPDF is not defined");
+        if (!html2canvasFactory) throw new Error("html2canvas is not defined");
+        const printableHtml = normalizePrintableHtml(html);
+        if (!printableHtml.trim()) throw new Error("HTML 内容为空，无法生成 PDF");
+        const widthPt = data.widthPt || 595.28;
+        const heightPt = data.heightPt || 841.89;
+        const container = document.createElement("div");
+        container.style.position = "fixed";
+        container.style.left = "-100000px";
+        container.style.top = "0";
+        container.style.margin = "0";
+        container.innerHTML = printableHtml;
+        document.body.appendChild(container);
+        const paper = container.querySelector(".hiprint-printPaper");
+        const target = container.firstElementChild || container;
+        const pageCount = Math.max(
+          1,
+          container.querySelectorAll(".hiprint-printPaper").length,
+        );
+        const rect = (paper || target).getBoundingClientRect();
+        const pdf = new JsPdfCtor({
+          orientation: data.landscape ? "landscape" : "portrait",
+          unit: "pt",
+          format: data.pageSize ? `${data.pageSize}`.toLowerCase() : "a4",
+        });
+        const canvas = await html2canvasFactory(target, {
+          scale: data.pdfScale || 2,
+          width: rect.width || target.scrollWidth,
+          x: Math.floor(rect.left),
+          y: Math.floor(rect.top),
+          useCORS: true,
+        });
+        const context = canvas.getContext("2d");
+        context.mozImageSmoothingEnabled = false;
+        context.webkitImageSmoothingEnabled = false;
+        context.msImageSmoothingEnabled = false;
+        context.imageSmoothingEnabled = false;
+        const image = canvas.toDataURL("image/jpeg");
+        for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+          pdf.addImage(
+            image,
+            "JPEG",
+            0,
+            0 - pageIndex * heightPt,
+            widthPt,
+            pageCount * heightPt,
+          );
+          if (pageIndex < pageCount - 1) pdf.addPage();
+        }
+        document.body.removeChild(container);
+        return dataUriToUint8Array(pdf.output("datauristring"));
+      };
+
       $.fn.onImgLoaded = (callback) => {
         let cb = (len) => {
           if (len <= 0) {
@@ -70,17 +227,51 @@
       $(document).ready(function() {
         ipcRenderer.on("print-new", (event, data) => {
           document.title = data.title ? data.title : "hiprint打印";
-          document.getElementById("printElement").innerHTML = data.html;
-          data.pageNum = $(".hiprint-printPaper").length;
+          const html = normalizePrintableHtml(data.html);
+          document.getElementById("printElement").innerHTML = html;
+          data.pageNum = Math.max(1, $(".hiprint-printPaper").length);
           $.fn.onImgLoaded(() => {
-            ipcRenderer.send("do", data);
+            createPdfBlobFromHtml(html, data)
+              .then((pdfBlob) => {
+                saveDebugBlobPdf(pdfBlob, data);
+                ipcRenderer.send("do", {
+                  ...data,
+                  type: "blob_pdf",
+                  pdfGeneratedBy: "html",
+                  pdf_blob: pdfBlob,
+                });
+              })
+              .catch((error) => {
+                ipcRenderer.send("do", {
+                  ...data,
+                  pdfGenerateError:
+                    error && error.message ? error.message : String(error),
+                });
+              });
           });
         });
         ipcRenderer.on("reprint", (event, data) => {
           document.title = data.title ? data.title : "hiprint打印";
-          document.getElementById("printElement").innerHTML = data.html;
+          const html = normalizePrintableHtml(data.html);
+          document.getElementById("printElement").innerHTML = html;
           $.fn.onImgLoaded(() => {
-            ipcRenderer.send("do", data);
+            createPdfBlobFromHtml(html, data)
+              .then((pdfBlob) => {
+                saveDebugBlobPdf(pdfBlob, data);
+                ipcRenderer.send("do", {
+                  ...data,
+                  type: "blob_pdf",
+                  pdfGeneratedBy: "html",
+                  pdf_blob: pdfBlob,
+                });
+              })
+              .catch((error) => {
+                ipcRenderer.send("do", {
+                  ...data,
+                  pdfGenerateError:
+                    error && error.message ? error.message : String(error),
+                });
+              });
           });
         });
       });
