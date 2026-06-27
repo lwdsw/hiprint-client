@@ -1,8 +1,8 @@
 !macro customInstall
   ; 如果安装包路径下存在 config.json 文件，则将其复制到用户的 AppData 目录下
   IfFileExists "$EXEDIR\config.json" 0 +3
-  CreateDirectory "$APPDATA\electron-hiprint"
-  CopyFiles "$EXEDIR\config.json" "$APPDATA\electron-hiprint\config.json"
+  CreateDirectory "$APPDATA\ArcoPrint"
+  CopyFiles "$EXEDIR\config.json" "$APPDATA\ArcoPrint\config.json"
   ; 删除旧的 hiprint 伪协议
   DeleteRegKey HKCR "hiprint"
   ; 注册 hiprint 伪协议
@@ -16,7 +16,7 @@
 !macro customUnInstall
   ; 询问用户是否需要清除本地缓存数据
   MessageBox MB_YESNO|MB_ICONQUESTION "是否同时删除本地缓存数据？$\n这将清除所有设置和历史记录。" IDNO SkipDataDeletion
-  RMDir /r "$APPDATA\electron-hiprint"
+  RMDir /r "$APPDATA\ArcoPrint"
   SkipDataDeletion:
   ; 删除 hiprint 伪协议
   DeleteRegKey HKCR "hiprint"

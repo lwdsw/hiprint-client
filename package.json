@@ -1,11 +1,10 @@
 {
-  "name": "hiprint-client",
-  "version": "1.0.2",
-  "description": "vue-plugin-hiprint client",
+  "name": "arcoprint",
+  "version": "1.0.1",
+  "description": "ArcoPrint silent print client",
   "main": "main.js",
-  "author": "CcSimple<840054486@qq.com>",
+  "author": "ArcoStudio<zerone40@163.com>",
   "license": "MIT",
-  "homepage": "https://gitee.com/CcSimple",
   "scripts": {
     "start": "node ./build/write-build-info.js && node start.js",
     "postinstall": "npm run fix-sqlite3 && node ./build/write-build-info.js",
@@ -24,9 +23,9 @@
     "releases": "npm run compress && npm run build-all && npm run restore"
   },
   "build": {
-    "productName": "hiprint",
-    "appId": "com.simple.cc.hiprint",
-    "copyright": "CcSimple<840054486@qq.com>",
+    "productName": "ArcoPrint",
+    "appId": "com.arcostudio.arcoprint",
+    "copyright": "ArcoStudio<zerone40@163.com>",
     "directories": {
       "output": "out"
     },
@@ -49,7 +48,7 @@
       "installerHeaderIcon": "./build/icons/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Hiprint",
+      "shortcutName": "ArcoPrint",
       "include": "installer.nsh"
     },
     "mac": {
@@ -83,7 +82,7 @@
     },
     "protocols": [
       {
-        "name": "hiprint",
+        "name": "ArcoPrint",
         "schemes": [
           "hiprint"
         ]

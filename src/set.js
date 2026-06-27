@@ -2,7 +2,7 @@
  * @Date: 2023-09-05 17:34:28
  * @LastEditors: admin@54xavier.cn
  * @LastEditTime: 2024-12-22 16:50:24
- * @FilePath: \xavier9896-electron-hiprint\src\set.js
+ * @FilePath: \arcoprint\src\set.js
  */
 "use strict";
 

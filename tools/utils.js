@@ -87,7 +87,7 @@ Store.initRenderer();
 const schema = {
   mainTitle: {
     type: "string",
-    default: "Electron-hiprint",
+    default: "ArcoPrint",
   },
   nickName: {
     type: "string",
@@ -918,7 +918,7 @@ Chromium: ${process.versions.chrome}
 Node.js: ${process.versions.node}
 V8: ${process.versions.v8}
 OS: ${os.type()} ${os.arch()} ${os.release()}`.trim();
-  const title = store.get("mainTitle") || "Electron-hiprint";
+  const title = store.get("mainTitle") || "ArcoPrint";
   dialog
     .showMessageBox({
       title: `关于 ${title}`,
@@ -934,7 +934,7 @@ OS: ${os.type()} ${os.arch()} ${os.release()}`.trim();
     .then((result) => {
       if (result.response === 0) {
         const issuesUrl = new URL(
-          `https://github.com/CcSimple/electron-hiprint/issues/new`,
+          `https://github.com/lwdsw/hiprint-client/issues/new`,
         );
         issuesUrl.searchParams.set(
           "title",

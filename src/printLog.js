@@ -2,7 +2,7 @@
  * @Date: 2024-12-14 23:59:49
  * @LastEditors: admin@54xavier.cn
  * @LastEditTime: 2024-12-15 02:55:48
- * @FilePath: /electron-hiprint/src/printlog.js
+ * @FilePath: /arcoprint/src/printlog.js
  */
 "use strict";
 const {

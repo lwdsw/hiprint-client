@@ -2,7 +2,7 @@
  * @Date: 2024-01-25 15:52:14
  * @LastEditors: admin@54xavier.cn
  * @LastEditTime: 2024-12-23 15:23:56
- * @FilePath: \electron-hiprint\main.js
+ * @FilePath: \arcoprint\main.js
  */
 const {
   app,
@@ -171,7 +171,7 @@ async function initialize() {
         createWindow();
       }
     });
-    console.log("==> Electron-hiprint 启动 <==");
+    console.log("==> ArcoPrint 启动 <==");
   });
 }
 
@@ -183,7 +183,7 @@ async function createWindow() {
   const windowOptions = {
     width: 500, // 窗口宽度
     height: 300, // 窗口高度
-    title: store.get("mainTitle") || "Electron-hiprint",
+    title: store.get("mainTitle") || "ArcoPrint",
     useContentSize: true, // 窗口大小不包含边框
     center: true, // 居中
     resizable: false, // 禁止窗口缩放
@@ -264,7 +264,7 @@ async function createWindow() {
         global.SOCKET_CLIENT = ioClient(store.get("transitUrl"), {
           transports: ["websocket"],
           query: {
-            client: "electron-hiprint",
+            client: "arcoprint",
           },
           auth: {
             token: store.get("transitToken"),
@@ -357,7 +357,7 @@ function initTray() {
   APP_TRAY = new Tray(trayPath);
 
   // 托盘提示标题
-  APP_TRAY.setToolTip("hiprint");
+  APP_TRAY.setToolTip("ArcoPrint");
 
   // 托盘菜单
   const trayMenuTemplate = [

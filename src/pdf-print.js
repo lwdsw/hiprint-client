@@ -1,7 +1,7 @@
 /*
  * @Description: pdf打印
- * @Author: CcSimple
- * @Github: https://github.com/CcSimple
+ * @Author: ArcoStudio
+ * @Github: https://github.com/lwdsw
  * @Date: 2023-04-21 16:35:07
  * @LastEditors: JZT.吴健
  * @LastEditTime: 2025-09-26 14:10:48

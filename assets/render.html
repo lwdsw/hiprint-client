@@ -78,10 +78,7 @@
 
         script.setAttribute("src", scriptSrc);
         script.onload = () => {
-          hiprint =
-            window.hiprint ||
-            (window["vue-plugin-hiprint"] &&
-              window["vue-plugin-hiprint"].hiprint);
+          hiprint = window.hiprint;
 
           if (!hiprint) {
             ipcRenderer.send("showMessageBox", {

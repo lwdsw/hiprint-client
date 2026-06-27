@@ -153,7 +153,7 @@ jobs:
             > macOS 提示应用程序已经损坏，解决方案
             >
             > [文件提示损坏解决办法 macwk.cn](https://macwk.cn/1144.html)
-            > `sudo xattr -r -d com.apple.quarantine /应用程序路径/hiprint.app`
+            > `sudo xattr -r -d com.apple.quarantine /应用程序路径/ArcoPrint.app`
           files: |
             artifacts/win/**
             artifacts/mac/**
