@@ -172,7 +172,6 @@
             formData: {
               port: 17521,
               token: "",
-              pluginVersion: "",
               openAtLogin: false,
               openAsHidden: false,
               connectTransit: false,
@@ -185,26 +184,6 @@
               pdfPath: "",
               defaultPrinter: "",
             },
-            // 预制的版本，解决部分内网无法获取新版本的问题
-            versions: [
-              {
-                value: "0.0.60",
-                info: "2025/03/24 17:25:24",
-              },
-              {
-                value: "0.0.56",
-                info: "2023/11/19 22:43:45",
-              },
-              {
-                value: "0.0.54-fix",
-                info: "2023/07/10 10:34:19",
-              },
-              {
-                value: "0.0.52",
-                info: "2023/05/08 17:57:53",
-              },
-            ],
-            downloadedVersions: [], // 存储已下载版本
             printerList: [], // 打印机列表
           };
         },
@@ -263,72 +242,6 @@
                     placeholder: "请输入便于识别的别名",
                   },
                   tips: "方便识别的友好名称",
-                  display: this.setTab === "basicSet",
-                },
-                {
-                  label: "插件版本设置",
-                  prop: "pluginVersion",
-                  is: "el-select",
-                  optionIs: "el-option",
-                  tips: "Render api 使用的渲染版本",
-                  attrs: {
-                    filterable: true,
-                    defaultFirstOption: true,
-                  },
-                  options: this.versions,
-                  optionRender: (h, option) => {
-                    const isDownloaded = this.downloadedVersions.includes(
-                      option.value,
-                    );
-                    return h(
-                      "div",
-                      {
-                        style: {
-                          display: "flex",
-                          justifyContent: "space-between",
-                        },
-                      },
-                      [
-                        h(
-                          "span",
-                          {
-                            style: {
-                              fontFamily: "monospace",
-                            },
-                          },
-                          option.value,
-                        ),
-                        h(
-                          "span",
-                          {
-                            style: {
-                              fontFamily: "monospace",
-                            },
-                          },
-                          [
-                            option.info,
-                            h("i", {
-                              class: "el-icon-success",
-                              style: {
-                                color: isDownloaded ? "#67C23A" : "transparent",
-                                marginLeft: "4px",
-                              },
-                            }),
-                          ],
-                        ),
-                      ],
-                    );
-                  },
-                  event: {
-                    change: (val) => {
-                      const isDownloaded = this.downloadedVersions.includes(
-                        val,
-                      );
-                      if (!isDownloaded) {
-                        ipc.send("downloadPlugin", val);
-                      }
-                    },
-                  },
                   display: this.setTab === "basicSet",
                 },
                 {
@@ -540,7 +453,6 @@
           this.onEvents();
           // 获取配置
           this.formData = store.store;
-          this.getVersions();
           this.getPrintersList();
         },
         mounted() {
@@ -551,9 +463,6 @@
         },
         methods: {
           onEvents() {
-            ipcRenderer.on("downloadedVersions", (event, versions) => {
-              this.downloadedVersions = versions;
-            });
             ipcRenderer.on("getPrintersList", (event, printers) => {
               this.printerList = printers;
             });
@@ -637,38 +546,6 @@
            */
           close() {
             ipc.send("closeSetWindow");
-          },
-          /**
-           * @description: 获取在线版本信息
-           * @return {void}
-           */
-          getVersions() {
-            const xhr = new XMLHttpRequest();
-            // cnpm 源
-            xhr.open(
-              "GET",
-              "https://registry.npmmirror.com/vue-plugin-hiprint",
-            );
-            xhr.onload = () => {
-              if (xhr.status === 200) {
-                this.npmInfo = JSON.parse(xhr.responseText);
-                this.versions = _.orderBy(
-                  _.map(this.npmInfo.versions, ({ version }) => ({
-                    value: version,
-                    time: dayjs(this.npmInfo.time[version]).valueOf(),
-                    info: dayjs(this.npmInfo.time[version]).format(
-                      "YYYY/MM/DD HH:mm:ss",
-                    ),
-                  })),
-                  "time",
-                  "desc",
-                );
-              }
-            };
-            xhr.onerror = () => {
-              console.log("获取版本信息失败");
-            };
-            xhr.send();
           },
           /**
            * @description: 获取打印机列表

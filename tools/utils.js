@@ -131,10 +131,6 @@ const schema = {
     type: "string",
     default: "",
   },
-  pluginVersion: {
-    type: "string",
-    default: "0.0.60",
-  },
   logPath: {
     type: "string",
     default: app.getPath("logs"),

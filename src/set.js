@@ -15,7 +15,6 @@ const {
   shell,
 } = require("electron");
 const path = require("path");
-const https = require("node:https");
 const fs = require("node:fs");
 const { store } = require("../tools/utils");
 
@@ -58,11 +57,6 @@ async function createSetWindow() {
 
   // 监听退出，移除所有事件
   SET_WINDOW.on("closed", removeEvent);
-
-  SET_WINDOW.webContents.on("did-finish-load", () => {
-    const downloadedVersions = getDownloadedVersions();
-    SET_WINDOW.webContents.send("downloadedVersions", downloadedVersions);
-  });
 
   return SET_WINDOW;
 }
@@ -150,65 +144,6 @@ function setConfig(event, data) {
           app.exit();
         }, 500);
       }
-    });
-}
-
-/**
- * @description: 渲染进程触发下载插件
- * @param {IpcMainEvent} event
- * @param {Object} data 插件版本号
- * @return {void}
- */
-function downloadPlugin(event, data) {
-  const fileList = ["vue-plugin-hiprint.js", "print-lock.css"];
-  Promise.all(
-    fileList.map((url) => {
-      return new Promise((resolve, reject) => {
-        https.get(
-          `https://registry.npmmirror.com/vue-plugin-hiprint/${data}/files/dist/${url}`,
-          (res) => {
-            let filePath = "";
-            if (app.isPackaged) {
-              filePath = path.join(
-                app.getAppPath(),
-                "../",
-                `plugin/${data}_${url}`,
-              );
-            } else {
-              filePath = path.join(app.getAppPath(), `plugin/${data}_${url}`);
-            }
-            const fileStream = fs.createWriteStream(filePath);
-            res.pipe(fileStream);
-            res.on("end", () => {
-              resolve();
-            });
-            res.on("error", () => {
-              reject();
-            });
-          },
-        );
-      });
-    }),
-  )
-    .then(() => {
-      dialog.showMessageBox(SET_WINDOW, {
-        type: "info",
-        title: "提示",
-        message: "插件下载成功！",
-        buttons: ["确定"],
-        noLink: true,
-      });
-      const downloadedVersions = getDownloadedVersions();
-      SET_WINDOW.webContents.send("downloadedVersions", downloadedVersions);
-    })
-    .catch(() => {
-      dialog.showMessageBox(SET_WINDOW, {
-        type: "error",
-        title: "提示",
-        message: "插件下载失败！",
-        buttons: ["确定"],
-        noLink: true,
-      });
     });
 }
 
@@ -349,7 +284,6 @@ function initSetEvent() {
   ipcMain.on("openDirectory", openDirectory);
   ipcMain.on("testTransit", testTransit);
   ipcMain.on("closeSetWindow", closeSetWindow);
-  ipcMain.on("downloadPlugin", downloadPlugin);
   ipcMain.on("getPrintersList", getPrintersList);
 }
 
@@ -365,23 +299,8 @@ function removeEvent() {
   ipcMain.removeListener("openDirectory", openDirectory);
   ipcMain.removeListener("testTransit", testTransit);
   ipcMain.removeListener("closeSetWindow", closeSetWindow);
-  ipcMain.removeListener("downloadPlugin", downloadPlugin);
   ipcMain.removeListener("getPrintersList", getPrintersList);
   SET_WINDOW = null;
-}
-
-function getDownloadedVersions() {
-  let pluginDir = path.join(app.getAppPath(), "plugin");
-  if (app.isPackaged) {
-    pluginDir = path.join(app.getAppPath(), "../", "plugin");
-  }
-  if (!fs.existsSync(pluginDir)) {
-    return [];
-  }
-  return fs
-    .readdirSync(pluginDir)
-    .filter((file) => file.endsWith(".js")) // 假设插件文件以 .js 结尾
-    .map((file) => file.split("_")[0]); // 提取版本号
 }
 
 /**
