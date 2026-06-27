@@ -1,4 +1,4 @@
-# electron-hiprint
+# hiprint-client
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/CcSimple/electron-hiprint)
 
@@ -26,12 +26,12 @@
 #### 本地调试与打包
 
 ```shell
-git clone https://github.com/CcSimple/electron-hiprint.git
+git clone https://github.com/lwdsw/hiprint-client.git
 # or
 git clone https://gitee.com/CcSimple/electron-hiprint.git
 
 # init
-cd electron-hiprint
+cd hiprint-client
 npm install
 
 # 调试预览
