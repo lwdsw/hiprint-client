@@ -1,6 +1,6 @@
 {
   "name": "arcoprint",
-  "version": "1.0.5",
+  "version": "5.0.0",
   "description": "ArcoPrint silent print client",
   "main": "main.js",
   "author": "ArcoStudio<zerone40@163.com>",
