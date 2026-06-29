@@ -33,7 +33,7 @@ const getUnixPrintOptions = (data = {}) => {
   const hasMediaOption = options.some((option) =>
     /(^|\s)(media|PageSize)=/i.test(option),
   );
-  const media = normalizeMediaName(data.pageSize) || "A4";
+  const media = normalizeMediaName(data.pageSize);
   if (!hasMediaOption && media) {
     options.push(`-o media=${media}`);
   }
@@ -55,7 +55,18 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
       .then(resolve)
       .catch(reject);
   } else {
-    printPdfFunction(pdfPath, printer, getUnixPrintOptions(data))
+    const unixPrintOptions = getUnixPrintOptions(data);
+    console.log(
+      "print pdf:" +
+        pdfPath +
+        JSON.stringify({
+          printer,
+          unixPrintOptions,
+          pageSize: data.pageSize,
+          templateId: data.templateId,
+        }),
+    );
+    printPdfFunction(pdfPath, printer, unixPrintOptions)
       .then(resolve)
       .catch(reject);
   }
