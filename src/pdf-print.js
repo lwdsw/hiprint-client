@@ -33,7 +33,7 @@ const getUnixPrintOptions = (data = {}) => {
   const hasMediaOption = options.some((option) =>
     /(^|\s)(media|PageSize)=/i.test(option),
   );
-  const media = normalizeMediaName(data.pageSize) || "A4";
+  const media = normalizeMediaName(data.pageSize);
   if (!hasMediaOption && media) {
     options.push(`-o media=${media}`);
   }
@@ -69,7 +69,18 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
       });
   } else {
     // 参数见 lp 命令 使用方法, 使用外部传入的lp命令
-    printPdfFunction(pdfPath, printer, getUnixPrintOptions(data))
+    const unixPrintOptions = getUnixPrintOptions(data);
+    console.log(
+      "print pdf:" +
+        pdfPath +
+        JSON.stringify({
+          printer,
+          unixPrintOptions,
+          pageSize: data.pageSize,
+          templateId: data.templateId,
+        }),
+    );
+    printPdfFunction(pdfPath, printer, unixPrintOptions)
       .then(() => {
         resolve();
       })

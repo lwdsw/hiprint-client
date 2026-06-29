@@ -54,14 +54,18 @@ async function handlePrintData(data = {}) {
 
   const printers = await PRINT_WINDOW.webContents.getPrintersAsync();
   let defaultPrinter = data.printer || store.get("defaultPrinter", "");
-  const ENABLE_STATUS = process.platform === "win32" ? [0, 512, 1024] : [3];
+  const ENABLE_STATUS = [0, 512, 1024];
   let printerError = false;
 
   printers.forEach((element) => {
     if (element.isDefault && (defaultPrinter === "" || defaultPrinter == null)) {
       defaultPrinter = element.name;
     }
-    if (element.name === defaultPrinter && !ENABLE_STATUS.includes(element.status)) {
+    if (
+      process.platform === "win32" &&
+      element.name === defaultPrinter &&
+      !ENABLE_STATUS.includes(element.status)
+    ) {
       printerError = true;
     }
   });
