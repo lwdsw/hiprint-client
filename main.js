@@ -234,6 +234,8 @@ async function createWindow() {
       // 隐藏任务栏
       MAIN_WINDOW.setSkipTaskbar(true);
 
+      hideDockIfNoVisibleWindow();
+
       // 阻止窗口关闭
       event.preventDefault();
     } else {
@@ -246,7 +248,9 @@ async function createWindow() {
   MAIN_WINDOW.webContents.on("dom-ready", async () => {
     try {
       if (!store.get("openAsHidden")) {
-        MAIN_WINDOW.show();
+        showMainWindow();
+      } else {
+        hideDockIfNoVisibleWindow();
       }
       // 未打包时打开开发者工具
       if (!app.isPackaged) {
@@ -328,11 +332,48 @@ function systemSetup() {
   Menu.setApplicationMenu(null);
 }
 
+function hasDock() {
+  return process.platform === "darwin" && app.dock;
+}
+
+function showDock() {
+  if (hasDock()) {
+    app.dock.show();
+  }
+}
+
+function hideDock() {
+  if (hasDock()) {
+    app.dock.hide();
+  }
+}
+
+function isVisibleWindow(window) {
+  return window && !window.isDestroyed() && window.isVisible();
+}
+
+function hasVisibleUserWindow() {
+  return [MAIN_WINDOW, SET_WINDOW, PRINT_LOG_WINDOW].some(isVisibleWindow);
+}
+
+function hideDockIfNoVisibleWindow() {
+  if (!hasVisibleUserWindow()) {
+    hideDock();
+  }
+}
+
+function watchDockVisibility(window) {
+  if (!window || window.__dockVisibilityWatched) return;
+  window.__dockVisibilityWatched = true;
+  window.on("closed", hideDockIfNoVisibleWindow);
+}
+
 /**
  * @description: 显示主窗口
  * @return {Void}
  */
 function showMainWindow() {
+  showDock();
   if (MAIN_WINDOW.isMinimized()) {
     // 将窗口从最小化状态恢复到以前的状态
     MAIN_WINDOW.restore();
@@ -395,10 +436,12 @@ function initTray() {
     },
     {
       label: "打印记录",
-      click: () => {
+      click: async () => {
         console.log("==>TRAY 打开打印记录窗口<==");
+        showDock();
         if (!PRINT_LOG_WINDOW) {
-          printLogSetup();
+          await printLogSetup();
+          watchDockVisibility(PRINT_LOG_WINDOW);
         } else {
           PRINT_LOG_WINDOW.show();
         }
@@ -435,8 +478,10 @@ function initTray() {
  * @return {BrowserWindow} SET_WINDOW 设置窗口
  */
 async function openSetWindow() {
+  showDock();
   if (!SET_WINDOW) {
     await setSetup();
+    watchDockVisibility(SET_WINDOW);
   } else {
     SET_WINDOW.show();
   }
