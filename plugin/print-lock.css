@@ -10,67 +10,67 @@
     margin: 0;
 }
 
-.hiprint-printPaper * {
+.arco-print-printPaper * {
     box-sizing: border-box;
     -moz-box-sizing: border-box; /* Firefox */
     -webkit-box-sizing: border-box; /* Safari */
    
 }
 
-    .hiprint-printPaper *:focus {
+    .arco-print-printPaper *:focus {
         outline: none;
     }
 
 
-.hiprint-page-break-avoid {
+.arco-print-page-break-avoid {
     page-break-after: avoid;
 }
-.hiprint-printPaper {
+.arco-print-printPaper {
     position: relative;
     padding: 0 0 0 0;
     page-break-after: always;
     overflow-x: hidden;
     overflow: hidden;
 }
-    .hiprint-printPaper .hiprint-printPaper-content {
+    .arco-print-printPaper .arco-print-printPaper-content {
         position: relative;
     }
-.hiprint-printPaper.design {
+.arco-print-printPaper.design {
     overflow: visible;
 }
 
 
 
-.hiprint-printTemplate .hiprint-printPanel {
+.arco-print-printTemplate .arco-print-printPanel {
     page-break-after: always;
 }
 
-.hiprint-printPaper, hiprint-printPanel {
+.arco-print-printPaper, arco-print-printPanel {
     box-sizing: border-box;
     border: 0px;
 }
 
-.hiprint-printPanel .hiprint-printPaper:last-child {
+.arco-print-printPanel .arco-print-printPaper:last-child {
     page-break-after: avoid;
 }
 
-.hiprint-printTemplate .hiprint-printPanel:last-child {
+.arco-print-printTemplate .arco-print-printPanel:last-child {
     page-break-after: avoid;
 }
 
-.hiprint-printPaper .hideheaderLinetarget {
+.arco-print-printPaper .hideheaderLinetarget {
     border-top: 0px dashed rgb(201, 190, 190) !important;
 }
 
-.hiprint-printPaper .hidefooterLinetarget {
+.arco-print-printPaper .hidefooterLinetarget {
     border-top: 0px dashed rgb(201, 190, 190) !important;
 }
 
-.hiprint-printPaper.design {
+.arco-print-printPaper.design {
     border: 1px dashed rgba(170,170,170,0.7);
 }
 
-.design .hiprint-printElement-table-content, .design .hiprint-printElement-longText-content {
+.design .arco-print-printElement-table-content, .design .arco-print-printElement-longText-content {
     overflow: hidden;
     box-sizing: border-box;
 }
@@ -94,13 +94,13 @@
     outline: none !important;
 }
 
-.design .hiprint-printElement,
-.design .hiprint-printElement:focus,
-.design .hiprint-printElement *:focus {
+.design .arco-print-printElement,
+.design .arco-print-printElement:focus,
+.design .arco-print-printElement *:focus {
     outline: none !important;
 }
 
-.hiprint-printElement-text {
+.arco-print-printElement-text {
     background-color: transparent;
     background-repeat: repeat;
     padding: 0 0 0 0;
@@ -122,12 +122,12 @@
     word-break: break-all;
 }
 
-.design .hiprint-printElement-text-content {
+.design .arco-print-printElement-text-content {
     border: 1px dashed rgb(206, 188, 188);
     box-sizing: border-box;
 }
 
-.hiprint-printElement-longText {
+.arco-print-printElement-longText {
     background-color: transparent;
     background-repeat: repeat;
     border: 0.75pt none rgb(0,0,0);
@@ -151,7 +151,7 @@
 
 
 
-.hiprint-printElement-table {
+.arco-print-printElement-table {
     background-color: transparent;
     background-repeat: repeat;
     color: rgb(0,0,0);
@@ -173,18 +173,18 @@
     line-height: 9.75pt;
 }
 
-    .hiprint-printElement-table thead {
+    .arco-print-printElement-table thead {
         background: #e8e8e8;
         font-weight: 700;
     }
 
-table.hiprint-printElement-tableTarget {
+table.arco-print-printElement-tableTarget {
     width: 100%;
     border-collapse: separate !important;
     border-spacing: 0;
 }
 
-.hiprint-printElement-tableTarget, .hiprint-printElement-tableTarget tr, .hiprint-printElement-tableTarget td, .hiprint-printElement-tableTarget th {
+.arco-print-printElement-tableTarget, .arco-print-printElement-tableTarget tr, .arco-print-printElement-tableTarget td, .arco-print-printElement-tableTarget th {
     border-color: rgb(0,0,0);
     border-style: none;
     font-weight: normal;
@@ -202,82 +202,82 @@ table.hiprint-printElement-tableTarget {
     font-size: 9pt;*/
 }
 
-.hiprint-printElement-tableTarget td,
-.hiprint-printElement-tableTarget th {
+.arco-print-printElement-tableTarget td,
+.arco-print-printElement-tableTarget th {
     border-left: 0;
     border-top: 0;
     border-right: 1px solid;
     border-bottom: 1px solid;
 }
 
-.hiprint-printElement-tableTarget thead:first-child tr:first-child td,
-.hiprint-printElement-tableTarget thead:first-child tr:first-child th,
-.hiprint-printElement-tableTarget tbody:first-child tr:first-child td,
-.hiprint-printElement-tableTarget tbody:first-child tr:first-child th {
+.arco-print-printElement-tableTarget thead:first-child tr:first-child td,
+.arco-print-printElement-tableTarget thead:first-child tr:first-child th,
+.arco-print-printElement-tableTarget tbody:first-child tr:first-child td,
+.arco-print-printElement-tableTarget tbody:first-child tr:first-child th {
     border-top: 1px solid;
 }
 
-.hiprint-printElement-tableTarget tr td:first-child,
-.hiprint-printElement-tableTarget tr th:first-child {
+.arco-print-printElement-tableTarget tr td:first-child,
+.arco-print-printElement-tableTarget tr th:first-child {
     border-left: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-all {
+.arco-print-printElement-tableTarget-border-all {
     border: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-none {
+.arco-print-printElement-tableTarget-border-none {
     border: 0px solid;
 }
 
-.hiprint-printElement-tableTarget-border-lr {
+.arco-print-printElement-tableTarget-border-lr {
     border-left: 1px solid;
     border-right: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-left {
+.arco-print-printElement-tableTarget-border-left {
     border-left: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-right {
+.arco-print-printElement-tableTarget-border-right {
     border-right: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-tb {
+.arco-print-printElement-tableTarget-border-tb {
     border-top: 1px solid;
     border-bottom: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-top {
+.arco-print-printElement-tableTarget-border-top {
     border-top: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-bottom {
+.arco-print-printElement-tableTarget-border-bottom {
     border-bottom: 1px solid;
 }
 
-.hiprint-printElement-tableTarget-border-td-none td,
-.hiprint-printElement-tableTarget-border-td-none th {
+.arco-print-printElement-tableTarget-border-td-none td,
+.arco-print-printElement-tableTarget-border-td-none th {
     border: 0px solid;
 }
 
-.hiprint-printElement-tableTarget-border-td-all td,
-.hiprint-printElement-tableTarget-border-td-all th {
+.arco-print-printElement-tableTarget-border-td-all td,
+.arco-print-printElement-tableTarget-border-td-all th {
     border-right: 1px solid;
     border-bottom: 1px solid;
 }
 
-    /*.hiprint-printElement-tableTarget tr,*/
-    .hiprint-printElement-tableTarget td,
-    .hiprint-printElement-tableTarget th {
+    /*.arco-print-printElement-tableTarget tr,*/
+    .arco-print-printElement-tableTarget td,
+    .arco-print-printElement-tableTarget th {
         height: 18pt;
     }
 
-.hiprint-printPaper .hiprint-paperNumber {
+.arco-print-printPaper .arco-print-paperNumber {
     font-size: 9pt;
 }
 
-.design .hiprint-printElement-table-handle {
+.design .arco-print-printElement-table-handle {
     position: absolute;
     top: -10px;
     left: -10px;
@@ -291,74 +291,74 @@ table.hiprint-printElement-tableTarget {
     z-index: 6;
 }
 
-.design .hiprint-printElement-table-handle::before,
-.design .hiprint-printElement-table-handle::after {
+.design .arco-print-printElement-table-handle::before,
+.design .arco-print-printElement-table-handle::after {
     content: "";
     position: absolute;
     background: #2563eb;
 }
 
-.design .hiprint-printElement-table-handle::before {
+.design .arco-print-printElement-table-handle::before {
     left: 3px;
     right: 3px;
     top: 6px;
     height: 1px;
 }
 
-.design .hiprint-printElement-table-handle::after {
+.design .arco-print-printElement-table-handle::after {
     top: 3px;
     bottom: 3px;
     left: 6px;
     width: 1px;
 }
 
-.hiprint-printPaper .hiprint-paperNumber-disabled {
+.arco-print-printPaper .arco-print-paperNumber-disabled {
     float: right !important;
     right: 0 !important;
     color: gainsboro !important;
 }
 
-.hiprint-printElement-vline, .hiprint-printElement-hline {
+.arco-print-printElement-vline, .arco-print-printElement-hline {
     border: 0px none rgb(0,0,0);
     
 }
-.hiprint-printElement-vline {
+.arco-print-printElement-vline {
     border-left: 0.75pt solid #000;
     border-right: 0px none rgb(0,0,0) !important;
     border-bottom: 0px none rgb(0,0,0) !important;
     border-top: 0px none rgb(0,0,0) !important;
 }
 
-.hiprint-printElement-hline {
+.arco-print-printElement-hline {
     border-top: 0.75pt solid #000;
     border-right: 0px none rgb(0,0,0) !important;
     border-bottom: 0px none rgb(0,0,0) !important;
     border-left: 0px none rgb(0,0,0) !important;
 }
 
-.hiprint-printElement-oval, .hiprint-printElement-rect {
+.arco-print-printElement-oval, .arco-print-printElement-rect {
     border: 0.75pt solid #000;
 }
 
-.hiprint-text-content-middle {
+.arco-print-text-content-middle {
     display:table;
 }
-.hiprint-text-content-middle>div {
+.arco-print-text-content-middle>div {
     display: table-cell;
     vertical-align:middle
 }
 
-.hiprint-text-content-bottom {
+.arco-print-text-content-bottom {
     display: table;
 }
 
-    .hiprint-text-content-bottom > div {
+    .arco-print-text-content-bottom > div {
         display: table-cell;
         vertical-align: bottom
     }
 
-/*hi-grid-row */
-.hi-grid-row {
+/*arco-grid-row */
+.arco-grid-row {
     position: relative;
     height: auto;
     margin-right: 0;
@@ -368,13 +368,13 @@ table.hiprint-printElement-tableTarget {
     box-sizing: border-box;
 }
 
-    .hi-grid-row::after, .hi-grid-row::before {
+    .arco-grid-row::after, .arco-grid-row::before {
         display: table;
         content: '';
         box-sizing: border-box;
     }
 
-.hi-grid-col {
+.arco-grid-col {
     display: block;
     box-sizing: border-box;
     position: relative;
@@ -391,7 +391,7 @@ table.hiprint-printElement-tableTarget {
     padding-left: 0pt;
     padding-right: 0pt;
 }
-.hiprint-gridColumnsFooter {
+.arco-print-gridColumnsFooter {
     text-align: left;
     clear: both;
 }
