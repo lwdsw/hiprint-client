@@ -77,6 +77,8 @@ async function printPdfBlob(socket, pdfBlob) {
   socket.emit("news", {
     type: "blob_pdf",
     pdf_blob: new Uint8Array(arrayBuffer),
+    copies: 3,
+    collate: true,
     templateId: "demo-template-id",
     printer: "", // 空字符串表示使用客户端默认打印机
     pageSize: "A4",
@@ -84,6 +86,13 @@ async function printPdfBlob(socket, pdfBlob) {
   });
 }
 ```
+
+`copies` 必须是大于等于 `1` 的整数，默认值为 `1`。`collate` 控制多页文档的逐份打印顺序，默认值为 `true`：
+
+- `collate: true`：`1、2、3，1、2、3`
+- `collate: false`：`1、1，2、2，3、3`
+
+Windows 通过 `pdf-to-printer` 的 `copies` 参数打印多份，逐份顺序由 SumatraPDF 和打印驱动管理。macOS/Linux 通过 CUPS 的 `-n` 和 `Collate=True/False` 执行。
 
 也可以传 PDF base64 / data URI：
 

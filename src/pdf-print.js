@@ -26,9 +26,28 @@ const normalizeMediaName = (pageSize) => {
   return "";
 };
 
+const normalizePrintJobOptions = (data = {}) => {
+  const copies = Number(data.copies ?? 1);
+  const collate = data.collate ?? true;
+  if (!Number.isSafeInteger(copies) || copies < 1) {
+    throw new Error("copies must be an integer greater than or equal to 1");
+  }
+  if (typeof collate !== "boolean") {
+    throw new Error("collate must be a boolean");
+  }
+  return Object.assign({}, data, { copies, collate });
+};
+
+const isUnixCopiesOption = (option) =>
+  /(^|\s)-n\s+\d+(\s|$)/i.test(option) || /(^|\s)copies=/i.test(option);
+
+const isUnixCollateOption = (option) => /(^|\s)Collate=/i.test(option);
+
 const getUnixPrintOptions = (data = {}) => {
   const options = Array.isArray(data.unixPrintOptions)
-    ? [...data.unixPrintOptions]
+    ? data.unixPrintOptions.filter(
+        (option) => !isUnixCopiesOption(option) && !isUnixCollateOption(option),
+      )
     : [];
   const hasMediaOption = options.some((option) =>
     /(^|\s)(media|PageSize)=/i.test(option),
@@ -37,6 +56,8 @@ const getUnixPrintOptions = (data = {}) => {
   if (!hasMediaOption && media) {
     options.push(`-o media=${media}`);
   }
+  options.push(`-n ${data.copies}`);
+  options.push(`-o Collate=${data.collate ? "True" : "False"}`);
   return options;
 };
 
@@ -47,10 +68,24 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
   }
 
   if (process.platform === "win32") {
-    data = Object.assign({}, data);
-    data.printer = printer;
-    console.log("print pdf:" + pdfPath + JSON.stringify(data));
-    const pdfOptions = Object.assign(data, { paperSize: data.paperName });
+    const pdfOptions = Object.assign({}, data, {
+      printer,
+      paperSize: data.paperName,
+      copies: data.copies,
+    });
+    delete pdfOptions.collate;
+    console.log(
+      "print pdf:" +
+        pdfPath +
+        JSON.stringify({
+          printer,
+          copies: data.copies,
+          collate: data.collate,
+          collateMode: "printer-driver",
+          paperSize: pdfOptions.paperSize,
+          templateId: data.templateId,
+        }),
+    );
     printPdfFunction(pdfPath, pdfOptions)
       .then(resolve)
       .catch(reject);
@@ -64,6 +99,8 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
           unixPrintOptions,
           pageSize: data.pageSize,
           templateId: data.templateId,
+          copies: data.copies,
+          collate: data.collate,
         }),
     );
     printPdfFunction(pdfPath, printer, unixPrintOptions)
@@ -107,6 +144,7 @@ const normalizePdfBlobToBuffer = (pdfBlob) => {
 const printPdfBlob = (pdfBlob, printer, data) => {
   return new Promise((resolve, reject) => {
     try {
+      const printData = normalizePrintJobOptions(data);
       const buffer = normalizePdfBlobToBuffer(pdfBlob);
       if (!buffer || buffer.length === 0) {
         reject(new Error("pdfBlob must be a Uint8Array, Buffer, ArrayBuffer or base64 string"));
@@ -129,7 +167,7 @@ const printPdfBlob = (pdfBlob, printer, data) => {
         }
 
         console.log("blob pdf saved:" + toSavePath);
-        realPrint(toSavePath, printer, data, resolve, reject);
+        realPrint(toSavePath, printer, printData, resolve, reject);
       });
     } catch (error) {
       console.log("print blob error:" + error?.message);
