@@ -92,7 +92,7 @@ async function printPdfBlob(socket, pdfBlob) {
 - `collate: true`：`1、2、3，1、2、3`
 - `collate: false`：`1、1，2、2，3、3`
 
-Windows 通过 `pdf-to-printer` 的 `copies` 参数打印多份，逐份顺序由 SumatraPDF 和打印驱动管理。macOS/Linux 通过 CUPS 的 `-n` 和 `Collate=True/False` 执行。
+Windows 使用 SumatraPDF 3.6.1 打印 PDF，默认关闭页面自动旋转和缩放，并根据 PDF 页面尺寸自动选择纸张；逐份顺序由 SumatraPDF 和打印驱动管理。macOS/Linux 通过 CUPS 的 `-n` 和 `Collate=True/False` 执行。
 
 也可以传 PDF base64 / data URI：
 

@@ -1,30 +1,19 @@
 /*
  * @Description: pdf打印
- * @Author: ArcoStudio
- * @Github: https://github.com/lwdsw
+ * @Author: JZT.吴健
  * @Date: 2023-04-21 16:35:07
- * @LastEditors: JZT.吴健
+ * @LastEditors: ArcoStudio
  * @LastEditTime: 2025-09-26 14:10:48
+ * @Github: https://github.com/lwdsw
  */
-const pdfPrint1 = require("pdf-to-printer");
-const pdfPrint2 = require("unix-print");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { store } = require("../tools/utils");
 const dayjs = require("dayjs");
 const { v7: uuidv7 } = require("uuid");
-
-const printPdfFunction =
-  process.platform === "win32" ? pdfPrint1.print : pdfPrint2.print;
-
-const normalizeMediaName = (pageSize) => {
-  if (typeof pageSize !== "string") return "";
-  const value = pageSize.trim().toLowerCase();
-  if (value === "a4") return "A4";
-  if (value === "letter") return "Letter";
-  return "";
-};
+const { printWindowsPdf } = require("./pdf-printers/windows");
+const { printUnixPdf } = require("./pdf-printers/unix");
 
 const normalizePrintJobOptions = (data = {}) => {
   const copies = Number(data.copies ?? 1);
@@ -38,29 +27,6 @@ const normalizePrintJobOptions = (data = {}) => {
   return Object.assign({}, data, { copies, collate });
 };
 
-const isUnixCopiesOption = (option) =>
-  /(^|\s)-n\s+\d+(\s|$)/i.test(option) || /(^|\s)copies=/i.test(option);
-
-const isUnixCollateOption = (option) => /(^|\s)Collate=/i.test(option);
-
-const getUnixPrintOptions = (data = {}) => {
-  const options = Array.isArray(data.unixPrintOptions)
-    ? data.unixPrintOptions.filter(
-        (option) => !isUnixCopiesOption(option) && !isUnixCollateOption(option),
-      )
-    : [];
-  const hasMediaOption = options.some((option) =>
-    /(^|\s)(media|PageSize)=/i.test(option),
-  );
-  const media = normalizeMediaName(data.pageSize);
-  if (!hasMediaOption && media) {
-    options.push(`-o media=${media}`);
-  }
-  options.push(`-n ${data.copies}`);
-  options.push(`-o Collate=${data.collate ? "True" : "False"}`);
-  return options;
-};
-
 const realPrint = (pdfPath, printer, data, resolve, reject) => {
   if (!fs.existsSync(pdfPath)) {
     reject({ path: pdfPath, msg: "file not found" });
@@ -68,12 +34,6 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
   }
 
   if (process.platform === "win32") {
-    const pdfOptions = Object.assign({}, data, {
-      printer,
-      paperSize: data.paperName,
-      copies: data.copies,
-    });
-    delete pdfOptions.collate;
     console.log(
       "print pdf:" +
         pdfPath +
@@ -82,30 +42,15 @@ const realPrint = (pdfPath, printer, data, resolve, reject) => {
           copies: data.copies,
           collate: data.collate,
           collateMode: "printer-driver",
-          paperSize: pdfOptions.paperSize,
+          paperSize: data.paperName || "auto",
+          autoRotation: false,
+          scale: "noscale",
           templateId: data.templateId,
         }),
     );
-    printPdfFunction(pdfPath, pdfOptions)
-      .then(resolve)
-      .catch(reject);
+    printWindowsPdf(pdfPath, printer, data).then(resolve).catch(reject);
   } else {
-    const unixPrintOptions = getUnixPrintOptions(data);
-    console.log(
-      "print pdf:" +
-        pdfPath +
-        JSON.stringify({
-          printer,
-          unixPrintOptions,
-          pageSize: data.pageSize,
-          templateId: data.templateId,
-          copies: data.copies,
-          collate: data.collate,
-        }),
-    );
-    printPdfFunction(pdfPath, printer, unixPrintOptions)
-      .then(resolve)
-      .catch(reject);
+    printUnixPdf(pdfPath, printer, data).then(resolve).catch(reject);
   }
 };
 
